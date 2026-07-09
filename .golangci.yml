@@ -1,0 +1,100 @@
+---
+version: "2"
+linters:
+  default: none
+  enable:
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - canonicalheader
+    - contextcheck
+    - copyloopvar
+    - decorder
+    - durationcheck
+    - embeddedstructfieldcheck
+    - errcheck
+    - errchkjson
+    - errname
+    - exptostd
+    - fatcontext
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - gocognit
+    - gocritic
+    - gocyclo
+    - godox
+    - gomoddirectives
+    - goprintffuncname
+    - gosec
+    - govet
+    - grouper
+    - iface
+    - importas
+    - ineffassign
+    - intrange
+    - iotamixing
+    - maintidx
+    - makezero
+    - mirror
+    - misspell
+    - musttag
+    - nestif
+    - nilnesserr
+    - nilnil
+    - noctx
+    - nolintlint
+    - nosprintfhostport
+    - predeclared
+    - reassign
+    - recvcheck
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck
+    - unconvert
+    - unqueryvet
+    - unused
+    - usestdlibvars
+    - usetesting
+    - wastedassign
+formatters:
+  enable:
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/teran/mcp-searxng)
+      no-inline-comments: true
+      no-prefix-comments: true
+      custom-order: true
+      no-lex-order: true
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 5
+  uniq-by-line: true
+  new: false
+  whole-files: true
+  fix: false
+output:
+  formats:
+    text:
+      path: stderr
+      print-linter-name: true
+      print-issued-lines: true
+      colors: true
+  sort-order:
+    - linter
+    - severity
+    - file
+  show-stats: true
+run:
+  timeout: 10m
+  relative-path-mode: cfg
+  issues-exit-code: 1
+  tests: true
+  build-tags: []
+  allow-parallel-runners: true
+  allow-serial-runners: true
+severity:
+  default: error

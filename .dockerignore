@@ -1,0 +1,9 @@
+*
+!cmd/
+!application/
+!config/
+!domain/
+!handlers/
+!infrastructure/
+!go.mod
+!go.sum
