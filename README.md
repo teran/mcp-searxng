@@ -13,6 +13,11 @@ This server exposes SearXNG search functionality through the MCP protocol using 
 - **Graceful shutdown** — cleanly drains connections on SIGTERM/SIGINT
 - **Distroless container** — minimal scratch-based Docker image
 
+## Documentation
+
+- **[SPEC.md](SPEC.md)** — full specification: architecture, middleware chain, error handling, security considerations, development guide
+- **[AGENTS.md](AGENTS.md)** — agent roles, package layout, tool-to-agent mapping, conflict resolution
+
 ## Quick Start
 
 ### 1. Run SearXNG

@@ -39,9 +39,11 @@ This document describes the agents/assistants involved in the development and op
 
 ## Tool-to-Agent Mapping
 
-| MCP Tool  | Agent Role | SearXNG Endpoint    |
-|-----------|------------|---------------------|
-| `search`  | MCP Server | `GET /search`       |
+| Endpoint / Tool | Agent Role | SearXNG Endpoint    |
+|-----------------|------------|---------------------|
+| `search` (MCP)  | MCP Server | `GET /search`       |
+| `GET /healthz`  | Devops     | —                   |
+| `GET /metrics`  | Devops     | —                   |
 
 ## Metrics
 
@@ -77,6 +79,7 @@ Workflow files:
 | `security`  | Reviewing rate limiting, log sanitization          |
 | `code-review` | Reviewing merge requests before deployment      |
 | `devops`    | CI/CD pipelines, Docker image, deployment, mutation testing |
+| `techwriter` | Writing and maintaining technical documentation |
 
 ## Conflict Resolution
 

@@ -46,7 +46,7 @@ This server exposes SearXNG search functionality through the MCP protocol using 
 | `PROMETHEUS_METRICS_ADDR` | No    | `:8081` | TCP address for the Prometheus `/metrics` endpoint (separate HTTP server, no auth) |
 | `RATE_LIMIT_GLOBAL`    | No       | `100`   | Global rate limit (requests/second)  |
 | `RATE_LIMIT_PER_CLIENT`| No       | `10`    | Per-client IP rate limit (requests/second) |
-| `WRITE_TIMEOUT`        | No       | `300`   | HTTP write timeout in seconds        |
+| `WRITE_TIMEOUT`        | No       | `300s`  | HTTP write timeout (Go duration, e.g. `300s`, `5m`) |
 
 The MCP server listens on the `/` HTTP path via the Streamable HTTP handler.
 
@@ -116,6 +116,8 @@ Custom Prometheus metrics exposed on the metrics server:
 Implements two-tier token-bucket rate limiting using `golang.org/x/time/rate`:
 - **Global limit** (default 100 rps) — prevents overall request flooding.
 - **Per-client limit** (default 10 rps) — per-IP limiting.
+- **Burst** — each limiter has a burst capacity of 2× its rate limit, allowing short traffic spikes.
+- **Background eviction** — stale per-client limiters are evicted every 10 minutes (TTL: 30 min). The eviction goroutine is stopped during graceful shutdown via the returned stop function.
 
 Returns **429 Too Many Requests** when the limit is exceeded.
 
@@ -153,6 +155,7 @@ Creates the SearXNG API client using a shared `http.Client` with connection pool
 - Global (100 rps) and per-client (10 rps) rate limiting via `RateLimitMiddleware`.
 - Batch JSON-RPC requests are limited to 100 items per batch to prevent amplification attacks.
 - All log strings are sanitized — control characters are stripped to prevent log injection.
+- Credentials in the SearXNG URL are redacted before logging via `url.Redacted()`.
 - HTTP redirects are disabled (`CheckRedirect: http.ErrUseLastResponse`).
 - Response bodies from SearXNG are limited to 10 MB via `io.LimitReader`.
 - **Prometheus metrics** are exposed on a separate HTTP server (default `:8081`) with no built-in authentication.
@@ -196,14 +199,16 @@ golangci-lint run ./...
 
 ### Running tests
 
+Run tests with the race detector enabled:
+
 ```bash
-go test -count=1 ./...
+go test -race -count=1 ./...
 ```
 
 ### Test coverage
 
 ```bash
-go test -coverprofile=coverage.out -count=1 ./...
+go test -race -coverprofile=coverage.out -count=1 ./...
 go tool cover -func=coverage.out
 ```
 
