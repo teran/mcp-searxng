@@ -134,12 +134,15 @@ func TestRateLimitMiddleware(t *testing.T) {
 	t.Parallel()
 
 	t.Run("request within limits passes through", func(t *testing.T) {
-		handler := RateLimitMiddleware(RateLimiterConfig{
+		mw, stop := RateLimitMiddleware(RateLimiterConfig{
 			GlobalLimit:    rate.Limit(100),
 			GlobalBurst:    100,
 			PerClientLimit: rate.Limit(10),
 			PerClientBurst: 10,
-		})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		})
+		t.Cleanup(stop)
+
+		handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -150,6 +153,38 @@ func TestRateLimitMiddleware(t *testing.T) {
 
 		if rr.Code != http.StatusOK {
 			t.Errorf("expected 200, got %d", rr.Code)
+		}
+	})
+
+	t.Run("rate limited request returns 429", func(t *testing.T) {
+		mw, stop := RateLimitMiddleware(RateLimiterConfig{
+			GlobalLimit:    rate.Limit(1),
+			GlobalBurst:    1,
+			PerClientLimit: rate.Limit(1),
+			PerClientBurst: 1,
+		})
+		t.Cleanup(stop)
+
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+
+		// First request should pass.
+		req1 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+		req1.RemoteAddr = "10.0.0.1:1234"
+		rr1 := httptest.NewRecorder()
+		mw(next).ServeHTTP(rr1, req1)
+		if rr1.Code != http.StatusOK {
+			t.Errorf("first request: expected 200, got %d", rr1.Code)
+		}
+
+		// Second request from same client (burst=1 exhausted) should be rate limited.
+		req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+		req2.RemoteAddr = "10.0.0.1:1234"
+		rr2 := httptest.NewRecorder()
+		mw(next).ServeHTTP(rr2, req2)
+		if rr2.Code != http.StatusTooManyRequests {
+			t.Errorf("second request: expected 429, got %d", rr2.Code)
 		}
 	})
 }

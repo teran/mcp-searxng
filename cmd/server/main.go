@@ -79,14 +79,15 @@ func main() {
 
 	// Wrap with middlewares (outermost to innermost):
 	// recovery → metrics → rate limit → body limit → logging → client injection → MCP handler.
+	rateLimitMW, stopRateLimiter := handlers.RateLimitMiddleware(handlers.RateLimiterConfig{
+		GlobalLimit:    rate.Limit(cfg.RateLimitGlobal),
+		GlobalBurst:    cfg.RateLimitGlobal * 2,
+		PerClientLimit: rate.Limit(cfg.RateLimitPerClient),
+		PerClientBurst: cfg.RateLimitPerClient * 2,
+	})
 	handler := handlers.RecoveryMiddleware(
 		handlers.MetricsMiddleware(metrics)(
-			handlers.RateLimitMiddleware(handlers.RateLimiterConfig{
-				GlobalLimit:    rate.Limit(cfg.RateLimitGlobal),
-				GlobalBurst:    cfg.RateLimitGlobal * 2,
-				PerClientLimit: rate.Limit(cfg.RateLimitPerClient),
-				PerClientBurst: cfg.RateLimitPerClient * 2,
-			})(
+			rateLimitMW(
 				handlers.BodyLimitMiddleware(handlers.DefaultMaxRequestBodySize)(
 					handlers.LoggingMiddleware(
 						injectClientMiddleware(cfg.SearXNGURL, sharedHTTPClient)(mcpHandler),
@@ -161,6 +162,9 @@ func main() {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	// Stop the rate limiter background eviction goroutine.
+	stopRateLimiter()
 
 	// Shut down both servers in order.
 	if err := mainServer.Shutdown(shutdownCtx); err != nil {

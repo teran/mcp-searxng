@@ -130,7 +130,9 @@ func (rl *rateLimiter) evictStaleClients() {
 // RateLimitMiddleware returns an HTTP middleware that rate-limits requests
 // using a token-bucket algorithm with the given configuration.
 // Returns 429 Too Many Requests when the limit is exceeded.
-func RateLimitMiddleware(cfg RateLimiterConfig) func(http.Handler) http.Handler {
+// The returned stop function terminates the background eviction goroutine;
+// callers must invoke it during shutdown to prevent goroutine leaks.
+func RateLimitMiddleware(cfg RateLimiterConfig) (func(http.Handler) http.Handler, func()) {
 	rl := NewRateLimiter(cfg)
 
 	return func(next http.Handler) http.Handler {
@@ -138,11 +140,12 @@ func RateLimitMiddleware(cfg RateLimiterConfig) func(http.Handler) http.Handler 
 			clientIP := extractClientIP(r)
 			if !rl.Allow(clientIP) {
 				log.Printf("WARN rate_limit exceeded client_ip=%s method=%s", SanitizeLog(clientIP), SanitizeLog(r.Method)) //nolint:gosec // value is sanitized by SanitizeLog()
+				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
-	}
+	}, rl.Stop
 }
 
 // extractClientIP extracts the client IP address from the request, checking
