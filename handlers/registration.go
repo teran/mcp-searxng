@@ -30,7 +30,7 @@ func SearchServiceFromContext(ctx context.Context) *application.SearchService {
 // If metrics is non-nil, each tool handler is wrapped with WrapToolHandler for
 // per-tool Prometheus metrics (request count and duration).
 func RegisterTools(s *mcp.Server, metrics *Metrics) {
-	mcp.AddTool(s, &mcp.Tool{ //nolint:exhaustruct
+	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search",
 		Description: "Search the web using SearXNG. Returns search results, answers, suggestions, and infoboxes.",
 	}, WrapToolHandler(metrics, "search", func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, SearchOutput, error) {

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -242,6 +241,3 @@ func TestRateLimiterDefaultBurst(t *testing.T) {
 		}
 	})
 }
-
-// Ensure the coverage types compile.
-var _ = fmt.Sprintf("%d", 0) //nolint:gochecknoglobals

@@ -93,19 +93,6 @@ func MetricsMiddleware(metrics *Metrics) func(http.Handler) http.Handler {
 	}
 }
 
-// metricsResponseWriter wraps http.ResponseWriter to capture
-// the HTTP status code for metrics labelling.
-type metricsResponseWriter struct {
-	http.ResponseWriter
-
-	statusCode int
-}
-
-func (mrw *metricsResponseWriter) WriteHeader(code int) {
-	mrw.statusCode = code
-	mrw.ResponseWriter.WriteHeader(code)
-}
-
 // statusCodeToClass converts an HTTP status code into a broad class label
 // suitable for Prometheus metric labels (e.g. "2xx", "4xx", "5xx").
 func statusCodeToClass(code int) string {
@@ -127,5 +114,5 @@ func statusCodeToClass(code int) string {
 // metrics on the same registry, then returns an http.Handler for /metrics.
 func RegisterMetricsOnRegistry(reg *prometheus.Registry) http.Handler {
 	reg.MustRegister(collectors.NewGoCollector())
-	return promhttp.HandlerFor(reg, promhttp.HandlerOpts{}) //nolint:exhaustruct
+	return promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 }

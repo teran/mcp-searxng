@@ -14,10 +14,7 @@ import (
 
 // Sentinel errors returned to the MCP client with user-friendly messages.
 // Detailed internal errors are logged server-side via log.Printf.
-var (
-	ErrSearchFailed  = errors.New("search failed")
-	ErrInternalError = errors.New("internal error")
-)
+var ErrSearchFailed = errors.New("search failed")
 
 // ============================================================
 // Input / output types

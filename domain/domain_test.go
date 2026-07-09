@@ -94,7 +94,7 @@ func TestSearchResponse_Populate(t *testing.T) {
 	resp := SearchResponse{
 		Query: "test query",
 		Results: []SearchResult{
-			{Title: "Result 1", URL: "https://example.com/1", Content: "Content 1", Engine: "google"}, //nolint:exhaustruct
+			{Title: "Result 1", URL: "https://example.com/1", Content: "Content 1", Engine: "google"},
 		},
 		Answers:         []AnswerResult{"42"},
 		Suggestions:     []SuggestionResult{"suggestion 1"},
@@ -220,7 +220,7 @@ func TestInfobox_Populate(t *testing.T) {
 		URL:     "https://example.com/info",
 		Content: "Infobox content",
 		Infoboxes: []InfoboxDetail{
-			{ID: "detail_1", Content: "Detail content"}, //nolint:exhaustruct
+			{ID: "detail_1", Content: "Detail content"},
 		},
 		Engine: "duckduckgo",
 		URLs: []InfoboxURL{

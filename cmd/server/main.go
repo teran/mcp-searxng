@@ -37,13 +37,13 @@ func main() {
 	// sharedHTTPClient is reused across requests for connection pooling.
 	// CheckRedirect is set to http.ErrUseLastResponse to prevent credential
 	// forwarding — the http.Client never follows redirects.
-	sharedHTTPClient := &http.Client{ //nolint:exhaustruct
+	sharedHTTPClient := &http.Client{
 		Timeout: 30 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-		Transport: &http.Transport{ //nolint:exhaustruct
-			MaxIdleConns:       100,
+		Transport: &http.Transport{
+			MaxIdleConns:       10,
 			IdleConnTimeout:    90 * time.Second,
 			DisableCompression: false,
 			DisableKeepAlives:  false,
@@ -51,11 +51,11 @@ func main() {
 	}
 
 	// Create the MCP server instance.
-	srv := mcp.NewServer(&mcp.Implementation{ //nolint:exhaustruct
+	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    "mcp-searxng",
 		Version: version,
-	}, &mcp.ServerOptions{ //nolint:exhaustruct
-		Capabilities: &mcp.ServerCapabilities{ //nolint:exhaustruct
+	}, &mcp.ServerOptions{
+		Capabilities: &mcp.ServerCapabilities{
 			Tools: &mcp.ToolCapabilities{ListChanged: false},
 		},
 	})
@@ -72,7 +72,7 @@ func main() {
 		func(r *http.Request) *mcp.Server {
 			return srv
 		},
-		&mcp.StreamableHTTPOptions{ //nolint:exhaustruct
+		&mcp.StreamableHTTPOptions{
 			Stateless: true,
 		},
 	)
@@ -111,7 +111,7 @@ func main() {
 	log.Printf("Version: %s, commit: %s, built: %s", version, commit, date)
 
 	// ---- Main MCP HTTP server ----
-	mainServer := &http.Server{ //nolint:exhaustruct
+	mainServer := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           mux,
 		ReadHeaderTimeout: 30 * time.Second,
@@ -125,7 +125,7 @@ func main() {
 	metricsMux := http.NewServeMux()
 	metricsMux.Handle("GET /metrics", metricsHandler)
 
-	metricsServer := &http.Server{ //nolint:exhaustruct
+	metricsServer := &http.Server{
 		Addr:              cfg.PrometheusMetricsAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 10 * time.Second,

@@ -26,7 +26,7 @@ func TestSearchService_Search(t *testing.T) {
 					Query:           params.Query,
 					NumberOfResults: 42,
 					Results: []domain.SearchResult{
-						{Title: "Result 1", URL: "https://example.com/1", Content: "Content 1", Engine: "google"}, //nolint:exhaustruct
+						{Title: "Result 1", URL: "https://example.com/1", Content: "Content 1", Engine: "google"},
 					},
 				}, nil
 			},

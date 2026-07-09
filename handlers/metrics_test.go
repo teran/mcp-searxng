@@ -154,23 +154,6 @@ func TestStatusCodeToClass(t *testing.T) {
 	}
 }
 
-func TestMetricsResponseWriter(t *testing.T) {
-	t.Parallel()
-
-	t.Run("captures status code", func(t *testing.T) {
-		rr := httptest.NewRecorder()
-		mrw := &metricsResponseWriter{
-			ResponseWriter: rr,
-		}
-
-		mrw.WriteHeader(http.StatusTeapot)
-
-		if mrw.statusCode != http.StatusTeapot {
-			t.Errorf("statusCode = %d, want %d", mrw.statusCode, http.StatusTeapot)
-		}
-	})
-}
-
 func TestWrapToolHandler_ErrorTypes(t *testing.T) {
 	t.Parallel()
 
@@ -190,6 +173,3 @@ func TestWrapToolHandler_ErrorTypes(t *testing.T) {
 		}
 	})
 }
-
-// Ensure the coverage types compile.
-var _ = fmt.Sprintf("%d", 0) //nolint:gochecknoglobals
