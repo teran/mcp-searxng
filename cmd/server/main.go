@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -104,7 +105,8 @@ func main() {
 	})
 	mux.Handle("/", handler)
 
-	log.Printf("SearXNG URL: %s", handlers.SanitizeLog(cfg.SearXNGURL))
+	u, _ := url.Parse(cfg.SearXNGURL)
+	log.Printf("SearXNG URL: %s", handlers.SanitizeLog(u.Redacted()))
 	log.Printf("Version: %s, commit: %s, built: %s", version, commit, date)
 
 	// ---- Main MCP HTTP server ----
