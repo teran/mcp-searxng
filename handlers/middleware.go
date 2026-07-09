@@ -133,7 +133,7 @@ func RecoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("ERROR panic recovered: %v", rec)
+				log.Printf("ERROR panic recovered: %s", SanitizeLog(fmt.Sprintf("%v", rec)))
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			}
 		}()

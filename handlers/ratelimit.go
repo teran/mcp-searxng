@@ -137,8 +137,7 @@ func RateLimitMiddleware(cfg RateLimiterConfig) func(http.Handler) http.Handler 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			clientIP := extractClientIP(r)
 			if !rl.Allow(clientIP) {
-				log.Printf("WARN rate_limit exceeded client_ip=%s method=%s", clientIP, r.Method) //nolint:gosec // clientIP and method are safe values
-				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+				log.Printf("WARN rate_limit exceeded client_ip=%s method=%s", SanitizeLog(clientIP), SanitizeLog(r.Method)) //nolint:gosec // value is sanitized by SanitizeLog()
 				return
 			}
 			next.ServeHTTP(w, r)

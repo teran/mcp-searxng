@@ -82,7 +82,7 @@ func NewSearchHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchI
 			Format:     "json",
 		})
 		if err != nil {
-			log.Printf("ERROR search: %v", err)
+			log.Printf("ERROR search: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search: %w", ErrSearchFailed)
 		}
 
