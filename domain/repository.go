@@ -15,5 +15,4 @@ type SearchParams struct {
 // SearchRepository defines the interface for SearXNG search operations.
 type SearchRepository interface {
 	Search(ctx context.Context, params SearchParams) (*SearchResponse, error)
-	GetEngines(ctx context.Context) ([]EngineInfo, error)
 }

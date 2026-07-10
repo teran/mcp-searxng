@@ -132,23 +132,6 @@ Search for images. Convenience wrapper around `search` with presets: `categories
 
 ---
 
-### 4. `list_engines`
-
-List available search engines configured on the SearXNG instance.
-
-**Input**: None.
-
-**Output**:
-
-| Field            | Type       | Description                                  |
-|------------------|------------|----------------------------------------------|
-| `engines`        | []object   | List of available engines                    |
-| `engines[].name` | string     | Engine display name                          |
-| `engines[].shortName` | string | Engine short name (e.g. google, duckduckgo)  |
-| `engines[].categories` | []string | Engine categories (e.g. general, news, images) |
-
----
-
 ## Middleware Chain
 
 The server applies five middleware layers to every HTTP request, executed in this order (outermost first).

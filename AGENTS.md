@@ -44,7 +44,6 @@ This document describes the agents/assistants involved in the development and op
 | `search` (MCP)  | MCP Server | `GET /search`       |
 | `search_news` (MCP) | MCP Server | `GET /search` (preset categories=news) |
 | `search_images` (MCP) | MCP Server | `GET /search` (preset categories=images) |
-| `list_engines` (MCP) | MCP Server | `GET /stats` (fallback `/api/stats`) |
 | `GET /healthz`  | Devops     | —                   |
 | `GET /metrics`  | Devops     | —                   |
 

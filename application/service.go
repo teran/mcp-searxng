@@ -25,12 +25,3 @@ func (s *SearchService) Search(ctx context.Context, params domain.SearchParams) 
 	}
 	return result, nil
 }
-
-// GetEngines returns the list of available search engines from SearXNG.
-func (s *SearchService) GetEngines(ctx context.Context) ([]domain.EngineInfo, error) {
-	engines, err := s.repo.GetEngines(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("get engines: %w", err)
-	}
-	return engines, nil
-}

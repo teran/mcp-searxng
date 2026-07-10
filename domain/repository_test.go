@@ -7,18 +7,12 @@ import (
 
 // mockRepo implements SearchRepository for testing.
 type mockRepo struct {
-	searchFunc  func(ctx context.Context, params SearchParams) (*SearchResponse, error)
-	enginesFunc func(ctx context.Context) ([]EngineInfo, error)
+	searchFunc func(ctx context.Context, params SearchParams) (*SearchResponse, error)
 }
 
 func (m *mockRepo) Search(ctx context.Context, params SearchParams) (*SearchResponse, error) {
 	return m.searchFunc(ctx, params)
 }
-
-func (m *mockRepo) GetEngines(ctx context.Context) ([]EngineInfo, error) {
-	return m.enginesFunc(ctx)
-}
-
 func TestSearchRepositoryInterface(t *testing.T) {
 	t.Parallel()
 

@@ -50,25 +50,6 @@ func (c *Client) Search(ctx context.Context, params domain.SearchParams) (*domai
 	return &result, nil
 }
 
-// GetEngines implements domain.SearchRepository.
-func (c *Client) GetEngines(ctx context.Context) ([]domain.EngineInfo, error) {
-	// Try /stats first, fall back to /api/stats.
-	body, err := c.doRequest(ctx, "/stats", url.Values{"format": {"json"}})
-	if err != nil {
-		body, err = c.doRequest(ctx, "/api/stats", url.Values{"format": {"json"}})
-		if err != nil {
-			return nil, fmt.Errorf("get engines: %w", err)
-		}
-	}
-
-	var raw rawStatsResponse
-	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, fmt.Errorf("unmarshal stats response: %w", err)
-	}
-
-	return raw.toDomain(), nil
-}
-
 // -- private HTTP helpers --
 
 func (c *Client) doRequest(ctx context.Context, path string, query url.Values) ([]byte, error) {

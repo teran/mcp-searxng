@@ -15,10 +15,7 @@ import (
 
 // Sentinel errors returned to the MCP client with user-friendly messages.
 // Detailed internal errors are logged server-side via log.Printf.
-var (
-	ErrSearchFailed     = errors.New("search failed")
-	ErrEngineListFailed = errors.New("engine list failed")
-)
+var ErrSearchFailed = errors.New("search failed")
 
 // ============================================================
 // Input / output types
@@ -232,42 +229,6 @@ func NewSearchNewsHandler(svc *application.SearchService) mcp.ToolHandlerFor[Sea
 			return nil, SearchOutput{}, fmt.Errorf("search_news: %w", ErrSearchFailed)
 		}
 		return nil, output, nil
-	}
-}
-
-// --- list_engines ---
-
-type ListEnginesInput struct{}
-
-type EngineInfoItem struct {
-	Name       string   `json:"name"`
-	ShortName  string   `json:"shortName,omitempty"`
-	Categories []string `json:"categories,omitempty"`
-}
-
-type ListEnginesOutput struct {
-	Engines []EngineInfoItem `json:"engines"`
-}
-
-// NewListEnginesHandler creates a handler that lists available search engines.
-func NewListEnginesHandler(svc *application.SearchService) mcp.ToolHandlerFor[ListEnginesInput, ListEnginesOutput] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, _ ListEnginesInput) (*mcp.CallToolResult, ListEnginesOutput, error) {
-		engines, err := svc.GetEngines(ctx)
-		if err != nil {
-			log.Printf("ERROR list_engines: %s", SanitizeLog(err.Error()))
-			return nil, ListEnginesOutput{}, fmt.Errorf("list_engines: %w", ErrEngineListFailed)
-		}
-
-		items := make([]EngineInfoItem, 0, len(engines))
-		for _, e := range engines {
-			items = append(items, EngineInfoItem{
-				Name:       e.Name,
-				ShortName:  e.ShortName,
-				Categories: e.Categories,
-			})
-		}
-
-		return nil, ListEnginesOutput{Engines: items}, nil
 	}
 }
 
