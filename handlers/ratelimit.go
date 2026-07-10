@@ -73,11 +73,13 @@ func (rl *rateLimiter) Stop() {
 // Allow checks whether a request from the given client IP should be allowed.
 // Returns true if the request is within rate limits.
 func (rl *rateLimiter) Allow(clientIP string) bool {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
 	if !rl.global.Allow() {
 		return false
 	}
 
-	rl.mu.Lock()
 	cl, exists := rl.clients[clientIP]
 	if !exists {
 		perBurst := rl.config.PerClientBurst
@@ -92,7 +94,6 @@ func (rl *rateLimiter) Allow(clientIP string) bool {
 	} else {
 		cl.lastSeen = time.Now()
 	}
-	rl.mu.Unlock()
 
 	return cl.limiter.Allow()
 }
