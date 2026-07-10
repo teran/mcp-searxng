@@ -32,9 +32,9 @@ jobs:
       - name: Check coverage threshold
         run: |
           COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | sed 's/%//')
-          echo "### Coverage: ${COVERAGE}% (threshold: 80%)" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Coverage: ${COVERAGE}% (threshold: 85%)" >> "$GITHUB_STEP_SUMMARY"
           echo "Coverage: ${COVERAGE}%"
-          THRESHOLD=80
+          THRESHOLD=85
           if awk "BEGIN {exit !($COVERAGE < $THRESHOLD)}"; then
             echo "❌ Coverage ${COVERAGE}% is below threshold of ${THRESHOLD}%"
             echo "❌ Coverage ${COVERAGE}% is below threshold of ${THRESHOLD}%" >> "$GITHUB_STEP_SUMMARY"

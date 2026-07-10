@@ -76,11 +76,11 @@ func TestHealthEndpoint(t *testing.T) {
 func freePort(t *testing.T) string {
 	t.Helper()
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	l, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to find free port: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	return l.Addr().String()
 }
 
@@ -91,9 +91,9 @@ func waitForServer(t *testing.T, url string, timeout time.Duration) {
 
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := http.Get(url) //nolint:noctx
+		resp, err := http.Get(url) //nolint:noctx,gosec
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			return
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -120,12 +120,12 @@ func TestRun_HealthEndpoint(t *testing.T) {
 	metricsAddr := freePort(t)
 
 	cfg := config.Config{
-		ListenAddr:           addr,
+		ListenAddr:            addr,
 		PrometheusMetricsAddr: metricsAddr,
-		SearXNGURL:           "http://localhost:9999",
-		RateLimitGlobal:      100,
-		RateLimitPerClient:   10,
-		WriteTimeout:         5 * time.Second,
+		SearXNGURL:            "http://localhost:9999",
+		RateLimitGlobal:       100,
+		RateLimitPerClient:    10,
+		WriteTimeout:          5 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -148,7 +148,7 @@ func TestRun_HealthEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GET /healthz: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", resp.StatusCode)
@@ -171,12 +171,12 @@ func TestRun_MCPHandlerPing(t *testing.T) {
 	metricsAddr := freePort(t)
 
 	cfg := config.Config{
-		ListenAddr:           addr,
+		ListenAddr:            addr,
 		PrometheusMetricsAddr: metricsAddr,
-		SearXNGURL:           "http://localhost:9999",
-		RateLimitGlobal:      100,
-		RateLimitPerClient:   10,
-		WriteTimeout:         5 * time.Second,
+		SearXNGURL:            "http://localhost:9999",
+		RateLimitGlobal:       100,
+		RateLimitPerClient:    10,
+		WriteTimeout:          5 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -218,7 +218,7 @@ func TestRun_MCPHandlerPing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Streamable HTTP handler may respond with either 200 (JSON-RPC response)
 	// or 202 (pending stream session). Both are valid responses for a ping.
@@ -273,12 +273,12 @@ func TestRun_ShutdownViaSignal(t *testing.T) {
 	metricsAddr := freePort(t)
 
 	cfg := config.Config{
-		ListenAddr:           addr,
+		ListenAddr:            addr,
 		PrometheusMetricsAddr: metricsAddr,
-		SearXNGURL:           "http://localhost:9999",
-		RateLimitGlobal:      100,
-		RateLimitPerClient:   10,
-		WriteTimeout:         5 * time.Second,
+		SearXNGURL:            "http://localhost:9999",
+		RateLimitGlobal:       100,
+		RateLimitPerClient:    10,
+		WriteTimeout:          5 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -308,12 +308,12 @@ func TestRun_ShutdownViaSIGINT(t *testing.T) {
 	metricsAddr := freePort(t)
 
 	cfg := config.Config{
-		ListenAddr:           addr,
+		ListenAddr:            addr,
 		PrometheusMetricsAddr: metricsAddr,
-		SearXNGURL:           "http://localhost:9999",
-		RateLimitGlobal:      100,
-		RateLimitPerClient:   10,
-		WriteTimeout:         5 * time.Second,
+		SearXNGURL:            "http://localhost:9999",
+		RateLimitGlobal:       100,
+		RateLimitPerClient:    10,
+		WriteTimeout:          5 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -339,12 +339,12 @@ func TestRun_ServerStartError(t *testing.T) {
 	metricsAddr := freePort(t)
 
 	cfg := config.Config{
-		ListenAddr:           "127.0.0.1:-1", // invalid port — ListenAndServe fails immediately
+		ListenAddr:            "127.0.0.1:-1", // invalid port — ListenAndServe fails immediately
 		PrometheusMetricsAddr: metricsAddr,
-		SearXNGURL:           "http://localhost:9999",
-		RateLimitGlobal:      100,
-		RateLimitPerClient:   10,
-		WriteTimeout:         5 * time.Second,
+		SearXNGURL:            "http://localhost:9999",
+		RateLimitGlobal:       100,
+		RateLimitPerClient:    10,
+		WriteTimeout:          5 * time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -368,7 +368,7 @@ func TestRun_MetricsServerStartError(t *testing.T) {
 	addr := freePort(t)
 
 	cfg := config.Config{
-		ListenAddr:           addr,
+		ListenAddr:            addr,
 		PrometheusMetricsAddr: "127.0.0.1:-1", // invalid port — metrics ListenAndServe fails immediately
 		SearXNGURL:            "http://localhost:9999",
 		RateLimitGlobal:       100,
@@ -398,7 +398,7 @@ func TestRun_WithMetricsPortSameAsMain(t *testing.T) {
 	addr := freePort(t)
 
 	cfg := config.Config{
-		ListenAddr:           addr,
+		ListenAddr:            addr,
 		PrometheusMetricsAddr: addr, // same address — metrics server will fail
 		SearXNGURL:            "http://localhost:9999",
 		RateLimitGlobal:       100,

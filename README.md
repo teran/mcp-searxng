@@ -147,7 +147,7 @@ docker build -t ghcr.io/teran/mcp-searxng:latest .
 goreleaser release --clean
 ```
 
-> **Note:** CI enforces a minimum **80% test coverage** gate. Any PR that drops coverage below 80% will be blocked.
+> **Note:** CI enforces a minimum **85% test coverage** gate. Any PR that drops coverage below 85% will be blocked.
 
 ## Documentation
 
