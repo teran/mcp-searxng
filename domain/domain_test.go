@@ -158,7 +158,6 @@ func TestSearchParams_Populate(t *testing.T) {
 		Page:       2,
 		TimeRange:  "month",
 		SafeSearch: 1,
-		Format:     "json",
 	}
 
 	if p.Query != "test search" {
@@ -178,9 +177,6 @@ func TestSearchParams_Populate(t *testing.T) {
 	}
 	if p.SafeSearch != 1 {
 		t.Errorf("SafeSearch = %d, want 1", p.SafeSearch)
-	}
-	if p.Format != "json" {
-		t.Errorf("Format = %q, want %q", p.Format, "json")
 	}
 }
 
@@ -206,9 +202,6 @@ func TestSearchParams_ZeroValues(t *testing.T) {
 	}
 	if p.SafeSearch != 0 {
 		t.Errorf("SafeSearch = %d, want 0", p.SafeSearch)
-	}
-	if p.Format != "" {
-		t.Errorf("Format = %q, want empty", p.Format)
 	}
 }
 

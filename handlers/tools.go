@@ -123,7 +123,6 @@ func searchHelper(ctx context.Context, svc *application.SearchService, params do
 		page = 1
 	}
 	params.Page = page
-	params.Format = "json"
 
 	result, err := svc.Search(ctx, params)
 	if err != nil {

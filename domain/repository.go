@@ -10,7 +10,6 @@ type SearchParams struct {
 	Page       int
 	TimeRange  string
 	SafeSearch int
-	Format     string
 }
 
 // SearchRepository defines the interface for SearXNG search operations.
