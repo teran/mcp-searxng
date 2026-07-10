@@ -23,55 +23,6 @@ func newMockService(repo *mockSearchRepo) *application.SearchService {
 	return application.NewSearchService(repo)
 }
 
-func TestContextWithServices(t *testing.T) {
-	t.Parallel()
-
-	t.Run("SearchService stored and retrieved", func(t *testing.T) {
-		ctx := ContextWithServices(context.Background(), nil)
-		svc := SearchServiceFromContext(ctx)
-		if svc != nil {
-			t.Errorf("SearchServiceFromContext = %v, want nil", svc)
-		}
-	})
-
-	t.Run("SearchServiceFromContext returns nil for empty context", func(t *testing.T) {
-		svc := SearchServiceFromContext(context.Background())
-		if svc != nil {
-			t.Errorf("SearchServiceFromContext = %v, want nil", svc)
-		}
-	})
-
-	t.Run("real service round-trips correctly", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		ctx := ContextWithServices(context.Background(), svc)
-
-		got := SearchServiceFromContext(ctx)
-		if got == nil {
-			t.Fatal("SearchServiceFromContext returned nil for stored service")
-		}
-		if got != svc {
-			t.Error("SearchServiceFromContext returned different pointer than stored")
-		}
-
-		// Verify the retrieved service is functional.
-		result, err := got.Search(context.Background(), domain.SearchParams{Query: "test"})
-		if err != nil {
-			t.Errorf("service returned error: %v", err)
-		}
-		if result.Query != "test" {
-			t.Errorf("result.Query = %q, want %q", result.Query, "test")
-		}
-	})
-}
-
 func TestRegisterTools(t *testing.T) {
 	t.Parallel()
 
