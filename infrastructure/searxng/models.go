@@ -62,6 +62,29 @@ type rawInfoboxDetail struct {
 	Attributes []rawInfoboxAttribute `json:"attributes,omitempty"`
 }
 
+// rawStatsResponse represents the SearXNG stats endpoint response.
+type rawStatsResponse struct {
+	Engines map[string]rawEngineStats `json:"engines"`
+}
+
+type rawEngineStats struct {
+	Name       string   `json:"name"`
+	ShortName  string   `json:"shortName,omitempty"`
+	Categories []string `json:"categories,omitempty"`
+}
+
+func (r rawStatsResponse) toDomain() []domain.EngineInfo {
+	engines := make([]domain.EngineInfo, 0, len(r.Engines))
+	for _, e := range r.Engines {
+		engines = append(engines, domain.EngineInfo{
+			Name:       e.Name,
+			ShortName:  e.ShortName,
+			Categories: e.Categories,
+		})
+	}
+	return engines
+}
+
 // -- domain conversion --
 
 func (r rawSearchResponse) toDomain() domain.SearchResponse {

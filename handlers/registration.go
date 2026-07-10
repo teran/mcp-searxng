@@ -50,4 +50,11 @@ func RegisterTools(s *mcp.Server, metrics *Metrics) {
 	}, WrapToolHandler(metrics, "search_images", func(ctx context.Context, _ *mcp.CallToolRequest, in SearchImagesInput) (*mcp.CallToolResult, SearchOutput, error) {
 		return NewSearchImagesHandler(SearchServiceFromContext(ctx))(ctx, nil, in)
 	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "list_engines",
+		Description: "List available search engines from SearXNG.",
+	}, WrapToolHandler(metrics, "list_engines", func(ctx context.Context, _ *mcp.CallToolRequest, _ ListEnginesInput) (*mcp.CallToolResult, ListEnginesOutput, error) {
+		return NewListEnginesHandler(SearchServiceFromContext(ctx))(ctx, nil, ListEnginesInput{})
+	}))
 }

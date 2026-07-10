@@ -48,6 +48,13 @@ type InfoboxDetail struct {
 	Attributes []InfoboxAttribute `json:"attributes,omitempty"`
 }
 
+// EngineInfo represents a search engine registered in SearXNG.
+type EngineInfo struct {
+	Name       string   `json:"name"`
+	ShortName  string   `json:"shortName,omitempty"`
+	Categories []string `json:"categories,omitempty"`
+}
+
 // SuggestionResult represents a search suggestion.
 type SuggestionResult string
 

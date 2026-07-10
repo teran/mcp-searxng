@@ -13,11 +13,16 @@ import (
 )
 
 type mockSearchRepo struct {
-	searchFunc func(ctx context.Context, params domain.SearchParams) (*domain.SearchResponse, error)
+	searchFunc  func(ctx context.Context, params domain.SearchParams) (*domain.SearchResponse, error)
+	enginesFunc func(ctx context.Context) ([]domain.EngineInfo, error)
 }
 
 func (m *mockSearchRepo) Search(ctx context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
 	return m.searchFunc(ctx, params)
+}
+
+func (m *mockSearchRepo) GetEngines(ctx context.Context) ([]domain.EngineInfo, error) {
+	return m.enginesFunc(ctx)
 }
 
 func newMockService(repo *mockSearchRepo) *application.SearchService {
