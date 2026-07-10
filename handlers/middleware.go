@@ -111,15 +111,27 @@ func mcpRequestMethod(body []byte) string {
 
 // SanitizeLog strips control characters from strings before logging
 // to prevent log injection attacks (e.g. newlines or ANSI escape codes
-// injected via JSON fields). Only printable characters and horizontal tab
-// are preserved; all other control characters (0x00-0x08, 0x0b-0x1f, 0x7f
-// and above) are removed.
+// injected via JSON fields). Only printable characters, horizontal tab,
+// and basic Latin characters are preserved. Control characters (0x00-0x08,
+// 0x0b-0x1f, 0x7f) and Unicode bidi formatting characters (LRM/RLM,
+// LRE/RLE/PDF/LRO/RLO, LRI/RLI/FSI/PDI) are removed.
 func SanitizeLog(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r == '\t' {
 			return r
 		}
 		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		// Remove Unicode directionality formatting characters to prevent
+		// bidi spoofing in log output.
+		if r >= 0x200e && r <= 0x200f { // LRM, RLM
+			return -1
+		}
+		if r >= 0x202a && r <= 0x202e { // LRE, RLE, PDF, LRO, RLO
+			return -1
+		}
+		if r >= 0x2066 && r <= 0x2069 { // LRI, RLI, FSI, PDI
 			return -1
 		}
 		return r

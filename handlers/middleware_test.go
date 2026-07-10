@@ -24,6 +24,14 @@ func TestSanitizeLog(t *testing.T) {
 		{"carriage\rreturn", "carriagereturn"},
 		{"null\x00byte", "nullbyte"},
 		{"\x1b[31mred\x1b[0m", "[31mred[0m"},
+		// Unicode bidi formatting characters (should be removed)
+		{"bidi\u200Eleft", "bidileft"},
+		{"bidi\u200Fright", "bidiright"},
+		{"\u202Aembed\u202C", "embed"},
+		{"\u202Doverride\u202C", "override"},
+		{"\u202Ereversed", "reversed"},
+		{"\u2066isolate\u2069", "isolate"},
+		{"\u2067rli\u2069", "rli"},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("sanitize(%q)", tt.input), func(t *testing.T) {
