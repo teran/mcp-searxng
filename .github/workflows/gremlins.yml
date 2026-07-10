@@ -2,7 +2,6 @@ name: gremlins
 
 on:
   pull_request:
-  push:
 
 jobs:
   gremlins:
