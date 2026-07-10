@@ -8,24 +8,6 @@ import (
 	"github.com/teran/mcp-searxng/application"
 )
 
-// Context keys for dependency injection.
-type (
-	searchServiceCtxKey struct{}
-)
-
-// ContextWithServices stores application services in context for retrieval
-// by tool handlers at runtime.
-func ContextWithServices(ctx context.Context, searchSvc *application.SearchService) context.Context {
-	ctx = context.WithValue(ctx, searchServiceCtxKey{}, searchSvc)
-	return ctx
-}
-
-// SearchServiceFromContext retrieves the SearchService from context.
-func SearchServiceFromContext(ctx context.Context) *application.SearchService {
-	v, _ := ctx.Value(searchServiceCtxKey{}).(*application.SearchService)
-	return v
-}
-
 // RegisterTools registers all MCP tools on the server with the given
 // SearchService. If metrics is non-nil, each tool handler is wrapped with
 // WrapToolHandler for per-tool Prometheus metrics (request count and duration).
