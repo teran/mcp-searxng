@@ -15,7 +15,10 @@ import (
 
 // Sentinel errors returned to the MCP client with user-friendly messages.
 // Detailed internal errors are logged server-side via log.Printf.
-var ErrSearchFailed = errors.New("search failed")
+var (
+	ErrSearchFailed     = errors.New("search failed")
+	ErrEngineListFailed = errors.New("engine list failed")
+)
 
 // ============================================================
 // Input / output types
@@ -253,7 +256,7 @@ func NewListEnginesHandler(svc *application.SearchService) mcp.ToolHandlerFor[Li
 		engines, err := svc.GetEngines(ctx)
 		if err != nil {
 			log.Printf("ERROR list_engines: %s", SanitizeLog(err.Error()))
-			return nil, ListEnginesOutput{}, fmt.Errorf("list_engines: %w", ErrSearchFailed)
+			return nil, ListEnginesOutput{}, fmt.Errorf("list_engines: %w", ErrEngineListFailed)
 		}
 
 		items := make([]EngineInfoItem, 0, len(engines))
