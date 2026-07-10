@@ -79,7 +79,7 @@ func TestRegisterTools(t *testing.T) {
 		srv := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 
 		// Should not panic.
-		RegisterTools(srv, nil)
+		RegisterTools(srv, nil, nil)
 	})
 
 	t.Run("registers search tool with metrics", func(t *testing.T) {
@@ -88,10 +88,10 @@ func TestRegisterTools(t *testing.T) {
 		srv := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 
 		// Should not panic.
-		RegisterTools(srv, m)
+		RegisterTools(srv, m, nil)
 	})
 
-	t.Run("handler uses service from context", func(t *testing.T) {
+	t.Run("handler works with explicit service", func(t *testing.T) {
 		repo := &mockSearchRepo{
 			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
 				return &domain.SearchResponse{
@@ -102,13 +102,11 @@ func TestRegisterTools(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		ctx := ContextWithServices(context.Background(), svc)
 
-		// This is the same composition used in RegisterTools:
-		// NewSearchHandler(SearchServiceFromContext(ctx))
-		handler := NewSearchHandler(SearchServiceFromContext(ctx))
+		// Pass the service directly to the handler — no context lookup needed.
+		handler := NewSearchHandler(svc)
 
-		_, output, err := handler(ctx, &mcp.CallToolRequest{}, SearchInput{
+		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, SearchInput{
 			Query: "test query",
 		})
 		if err != nil {

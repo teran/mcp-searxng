@@ -61,6 +61,10 @@ func Run(cfg config.Config) error {
 		},
 	}
 
+	// Create the SearXNG client and search service (shared across all requests).
+	searxngClient := infra.NewClient(cfg.SearXNGURL, sharedHTTPClient)
+	searchSvc := application.NewSearchService(searxngClient)
+
 	// Create the MCP server instance.
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    "mcp-searxng",
@@ -75,8 +79,8 @@ func Run(cfg config.Config) error {
 	promRegistry := prometheus.NewRegistry()
 	metrics := handlers.NewMetrics(promRegistry)
 
-	// Register tools via handler factories.
-	handlers.RegisterTools(srv, metrics)
+	// Register tools via handler factories (service injected explicitly — no context lookup).
+	handlers.RegisterTools(srv, metrics, searchSvc)
 
 	// Create the Streamable HTTP handler.
 	mcpHandler := mcp.NewStreamableHTTPHandler(
@@ -89,7 +93,7 @@ func Run(cfg config.Config) error {
 	)
 
 	// Wrap with middlewares (outermost to innermost):
-	// recovery → metrics → rate limit → body limit → logging → client injection → MCP handler.
+	// recovery → metrics → rate limit → body limit → logging → MCP handler.
 	rateLimitMW, stopRateLimiter := handlers.RateLimitMiddleware(handlers.RateLimiterConfig{
 		GlobalLimit:    rate.Limit(cfg.RateLimitGlobal),
 		GlobalBurst:    cfg.RateLimitGlobal * 2,
@@ -100,9 +104,7 @@ func Run(cfg config.Config) error {
 		handlers.MetricsMiddleware(metrics)(
 			rateLimitMW(
 				handlers.BodyLimitMiddleware(handlers.DefaultMaxRequestBodySize)(
-					handlers.LoggingMiddleware(
-						injectClientMiddleware(cfg.SearXNGURL, sharedHTTPClient)(mcpHandler),
-					),
+					handlers.LoggingMiddleware(mcpHandler),
 				),
 			),
 		),
@@ -189,19 +191,4 @@ func Run(cfg config.Config) error {
 
 	log.Println("Server stopped gracefully")
 	return nil
-}
-
-// injectClientMiddleware creates the SearXNG client and attaches
-// the search service to the context.
-func injectClientMiddleware(searxngURL string, sharedHTTPClient *http.Client) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			client := infra.NewClient(searxngURL, sharedHTTPClient)
-			searchSvc := application.NewSearchService(client)
-
-			ctx := r.Context()
-			ctx = handlers.ContextWithServices(ctx, searchSvc)
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
 }
