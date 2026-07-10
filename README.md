@@ -22,6 +22,9 @@
   <a href="https://github.com/teran/mcp-searxng/blob/master/LICENSE">
     <img src="https://img.shields.io/github/license/teran/mcp-searxng" alt="License">
   </a>
+  <a href="https://github.com/teran/mcp-searxng/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/github/actions/workflow/status/teran/mcp-searxng/ci.yml?branch=master&label=coverage&logo=codecov" alt="Coverage">
+  </a>
   <a href="https://github.com/teran/mcp-searxng">
     <img src="https://img.shields.io/github/languages/code-size/teran/mcp-searxng" alt="Code Size">
   </a>
@@ -130,8 +133,9 @@ docker run -e SEARXNG_URL=http://searxng:8888 -p 8080:8080 ghcr.io/teran/mcp-sea
 # Build
 go build -o mcp-searxng ./cmd/server
 
-# Test
-go test -count=1 ./...
+# Test (with race detector and coverage)
+go test -race -coverprofile=coverage.out -count=1 ./...
+go tool cover -func=coverage.out | grep total
 
 # Lint
 golangci-lint run
@@ -142,6 +146,8 @@ docker build -t ghcr.io/teran/mcp-searxng:latest .
 # Release (via goreleaser)
 goreleaser release --clean
 ```
+
+> **Note:** CI enforces a minimum **80% test coverage** gate. Any PR that drops coverage below 80% will be blocked.
 
 ## Documentation
 
