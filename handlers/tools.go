@@ -44,10 +44,24 @@ type SearchResultItem struct {
 	Source        *string `json:"source,omitempty"`
 }
 
+type InfoboxAttributeItem struct {
+	Key   string `json:"key,omitempty"`
+	Value string `json:"value,omitempty"`
+}
+
+type InfoboxURLItem struct {
+	Title string `json:"title,omitempty"`
+	URL   string `json:"url,omitempty"`
+}
+
 type InfoboxItem struct {
-	ID      string `json:"id,omitempty"`
-	URL     string `json:"url,omitempty"`
-	Content string `json:"content,omitempty"`
+	ID         string                 `json:"id,omitempty"`
+	URL        string                 `json:"url,omitempty"`
+	Content    string                 `json:"content,omitempty"`
+	Attributes []InfoboxAttributeItem `json:"attributes,omitempty"`
+	URLs       []InfoboxURLItem       `json:"urls,omitempty"`
+	ImgSrc     *string                `json:"img_src,omitempty"`
+	Engine     string                 `json:"engine,omitempty"`
 }
 
 type SearchOutput struct {
@@ -140,10 +154,30 @@ func searchHelper(ctx context.Context, svc *application.SearchService, params do
 
 	infoboxes := make([]InfoboxItem, 0, len(result.Infoboxes))
 	for _, ib := range result.Infoboxes {
+		attrs := make([]InfoboxAttributeItem, 0, len(ib.Attributes))
+		for _, a := range ib.Attributes {
+			attrs = append(attrs, InfoboxAttributeItem{
+				Key:   a.Key,
+				Value: a.Value,
+			})
+		}
+
+		urls := make([]InfoboxURLItem, 0, len(ib.URLs))
+		for _, u := range ib.URLs {
+			urls = append(urls, InfoboxURLItem{
+				Title: u.Title,
+				URL:   u.URL,
+			})
+		}
+
 		infoboxes = append(infoboxes, InfoboxItem{
-			ID:      ib.ID,
-			URL:     ib.URL,
-			Content: ib.Content,
+			ID:         ib.ID,
+			URL:        ib.URL,
+			Content:    ib.Content,
+			Attributes: attrs,
+			URLs:       urls,
+			ImgSrc:     ib.ImgSrc,
+			Engine:     ib.Engine,
 		})
 	}
 
