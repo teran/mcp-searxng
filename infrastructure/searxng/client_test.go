@@ -367,8 +367,9 @@ func TestClient_Search_HTTPErrors_Extended(t *testing.T) {
 		if err == nil {
 			t.Fatal("Search() expected error for long body, got nil")
 		}
-		if !strings.Contains(err.Error(), "...") {
-			t.Errorf("error = %q, want substring %q (truncation marker)", err.Error(), "...")
+		// Body should be truncated to 512 chars (error wraps body with ~40 chars of prefix/suffix).
+		if len(err.Error()) > 570 {
+			t.Errorf("error length = %d, want <= 570 (truncated)", len(err.Error()))
 		}
 	})
 

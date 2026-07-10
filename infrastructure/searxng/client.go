@@ -132,13 +132,14 @@ func extractErrorDetail(body []byte, statusCode int) string {
 		return msgResp.Message
 	}
 
-	// Fallback: take first line, sanitize.
+	// Fallback: take first line. Truncate before string conversion to avoid
+	// double-allocation of large error bodies (up to 10 MB).
+	if len(body) > 512 {
+		body = body[:512]
+	}
 	detail := string(body)
 	if idx := strings.IndexAny(detail, "\n\r"); idx >= 0 {
 		detail = detail[:idx]
-	}
-	if len(detail) > 512 {
-		detail = detail[:512] + "..."
 	}
 	return detail
 }

@@ -49,11 +49,8 @@ func TestExtractErrorDetail(t *testing.T) {
 	t.Run("plain body truncated at 512 chars", func(t *testing.T) {
 		longBody := []byte(strings.Repeat("A", 600))
 		detail := extractErrorDetail(longBody, http.StatusInternalServerError)
-		if len(detail) != 512+len("...") {
-			t.Errorf("len(detail) = %d, want %d", len(detail), 512+len("..."))
-		}
-		if !strings.HasSuffix(detail, "...") {
-			t.Errorf("detail = %q, want suffix %q", detail, "...")
+		if len(detail) != 512 {
+			t.Errorf("len(detail) = %d, want %d", len(detail), 512)
 		}
 	})
 
@@ -114,9 +111,6 @@ func TestExtractErrorDetail(t *testing.T) {
 		detail := extractErrorDetail(body, http.StatusInternalServerError)
 		if len(detail) != 512 {
 			t.Errorf("len(detail) = %d, want %d", len(detail), 512)
-		}
-		if strings.HasSuffix(detail, "...") {
-			t.Errorf("detail = %q should not be truncated", detail)
 		}
 	})
 }
