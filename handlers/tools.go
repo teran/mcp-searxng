@@ -91,9 +91,9 @@ type SearchImagesInput struct {
 	Language   string `json:"language,omitempty" jsonschema:"code of the language (e.g. en-US, de-DE)"`
 }
 
-// FormatDate converts an ISO 8601 date string to a readable format (e.g. "10 Jul 2026").
+// formatDate converts an ISO 8601 date string to a readable format (e.g. "10 Jul 2026").
 // Returns empty string if the input is nil.
-func FormatDate(d *string) string {
+func formatDate(d *string) string {
 	if d == nil || *d == "" {
 		return ""
 	}
@@ -135,7 +135,7 @@ func searchHelper(ctx context.Context, svc *application.SearchService, params do
 			Engine:        r.Engine,
 			Category:      r.Category,
 			PublishedDate: r.PublishedDate,
-			FormattedDate: FormatDate(r.PublishedDate),
+			FormattedDate: formatDate(r.PublishedDate),
 			ImgSrc:        r.ImgSrc,
 			Source:        r.Source,
 		})
