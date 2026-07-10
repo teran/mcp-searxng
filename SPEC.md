@@ -79,6 +79,7 @@ Search the web using SearXNG. Returns search results, answers, suggestions, and 
 | `results[].engine` | string   | Search engine that provided this result      |
 | `results[].category` | string | Result category                              |
 | `results[].publishedDate` | string | Publication date (ISO 8601)           |
+| `results[].formattedDate` | string  | Formatted date (e.g. "10 Jul 2026")          |
 | `results[].img_src` | string  | Image source URL (for image results)         |
 | `results[].source` | string   | Source domain                                |
 | `answers`        | []string   | Direct answers (e.g. calculations)           |
@@ -87,7 +88,64 @@ Search the web using SearXNG. Returns search results, answers, suggestions, and 
 | `infoboxes[].id` | string    | Infobox identifier                           |
 | `infoboxes[].url` | string   | Infobox source URL                           |
 | `infoboxes[].content` | string | Infobox content                          |
+| `infoboxes[].img_src` | string | Image source URL                         |
+| `infoboxes[].engine` | string  | Engine that provided the infobox             |
+| `infoboxes[].attributes` | []object | Infobox attributes (key/value pairs)    |
+| `infoboxes[].attributes[].key` | string | Attribute name                       |
+| `infoboxes[].attributes[].value` | string | Attribute value                     |
+| `infoboxes[].urls` | []object   | Related URLs                                |
+| `infoboxes[].urls[].title` | string | Link title                             |
+| `infoboxes[].urls[].url` | string   | Link URL                               |
 | `number_of_results` | int    | Total number of results                      |
+
+### 2. `search_news`
+
+Search for news. Convenience wrapper around `search` with presets: `categories=["news"]`, `time_range="day"`.
+
+**Input**:
+
+| Parameter    | Type     | Required | Description                                        |
+|--------------|----------|----------|----------------------------------------------------|
+| `query`      | string   | yes      | The search query                                   |
+| `language`   | string   | no       | Code of the language (e.g. en-US, de-DE, ru-RU)   |
+| `page`       | int      | no       | Search page number (default: 1)                    |
+| `safesearch` | int      | no       | Safe search filter: 0=off, 1=moderate, 2=strict    |
+
+**Output**: Same as `search`.
+
+---
+
+### 3. `search_images`
+
+Search for images. Convenience wrapper around `search` with presets: `categories=["images"]`.
+
+**Input**:
+
+| Parameter    | Type     | Required | Description                                        |
+|--------------|----------|----------|----------------------------------------------------|
+| `query`      | string   | yes      | The search query                                   |
+| `language`   | string   | no       | Code of the language (e.g. en-US, de-DE, ru-RU)   |
+| `page`       | int      | no       | Search page number (default: 1)                    |
+| `safesearch` | int      | no       | Safe search filter: 0=off, 1=moderate, 2=strict    |
+
+**Output**: Same as `search`.
+
+---
+
+### 4. `list_engines`
+
+List available search engines configured on the SearXNG instance.
+
+**Input**: None.
+
+**Output**:
+
+| Field            | Type       | Description                                  |
+|------------------|------------|----------------------------------------------|
+| `engines`        | []object   | List of available engines                    |
+| `engines[].name` | string     | Engine display name                          |
+| `engines[].shortName` | string | Engine short name (e.g. google, duckduckgo)  |
+| `engines[].categories` | []string | Engine categories (e.g. general, news, images) |
 
 ---
 
