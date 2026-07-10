@@ -226,11 +226,12 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 ### Quality gates (CI pipeline)
 
-Every commit on any branch is checked by three workflows:
+Every commit on any branch is checked by:
 
 1. **golangci-lint** — static analysis with `gosec` enabled.
 2. **go test** — unit tests with coverage profile.
-3. **gremlins unleash** — mutation testing (informational, does not block).
+3. **Coverage gate** — total test coverage must be at least **85%** (checked via `go tool cover` after tests).
+4. **gremlins unleash** — mutation testing (informational, does not block).
 
 ### Linting
 
@@ -248,9 +249,12 @@ go test -race -count=1 ./...
 
 ### Test coverage
 
+The CI enforces a minimum **85% total coverage** gate. To check coverage locally:
+
 ```bash
 go test -race -coverprofile=coverage.out -count=1 ./...
 go tool cover -func=coverage.out
+go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}'  # coverage percentage
 ```
 
 ### Mutation testing (gremlins)

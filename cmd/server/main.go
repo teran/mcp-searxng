@@ -34,6 +34,17 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	if err := Run(*cfg); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
+}
+
+// Run creates and starts the MCP HTTP server, metrics server, and
+// waits for a signal (SIGTERM/SIGINT) or server error to trigger
+// graceful shutdown. It returns nil on successful shutdown or an
+// error only if a non-recoverable failure occurs before the servers
+// are started.
+func Run(cfg config.Config) error {
 	// sharedHTTPClient is reused across requests for connection pooling.
 	// CheckRedirect is set to http.ErrUseLastResponse to prevent credential
 	// forwarding — the http.Client never follows redirects.
@@ -153,6 +164,8 @@ func main() {
 	// Wait for SIGTERM or SIGINT for graceful shutdown.
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(quit)
+
 	select {
 	case sig := <-quit:
 		log.Printf("Received signal %v, shutting down...", sig)
@@ -175,6 +188,7 @@ func main() {
 	}
 
 	log.Println("Server stopped gracefully")
+	return nil
 }
 
 // injectClientMiddleware creates the SearXNG client and attaches
