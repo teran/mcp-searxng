@@ -36,4 +36,18 @@ func RegisterTools(s *mcp.Server, metrics *Metrics) {
 	}, WrapToolHandler(metrics, "search", func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
 		return NewSearchHandler(SearchServiceFromContext(ctx))(ctx, nil, in)
 	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "search_news",
+		Description: "Search news using SearXNG. Convenience wrapper around search with categories=[news], time_range=day.",
+	}, WrapToolHandler(metrics, "search_news", func(ctx context.Context, _ *mcp.CallToolRequest, in SearchNewsInput) (*mcp.CallToolResult, SearchOutput, error) {
+		return NewSearchNewsHandler(SearchServiceFromContext(ctx))(ctx, nil, in)
+	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "search_images",
+		Description: "Search images using SearXNG. Convenience wrapper around search with categories=[images].",
+	}, WrapToolHandler(metrics, "search_images", func(ctx context.Context, _ *mcp.CallToolRequest, in SearchImagesInput) (*mcp.CallToolResult, SearchOutput, error) {
+		return NewSearchImagesHandler(SearchServiceFromContext(ctx))(ctx, nil, in)
+	}))
 }
