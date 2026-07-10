@@ -34,7 +34,8 @@ This server exposes SearXNG search functionality through the MCP protocol using 
 | MCP SDK           | `github.com/modelcontextprotocol/go-sdk`                        |
 | Transport         | Streamable HTTP (MCP spec 2025-03-26+, remote-capable)          |
 | HTTP Router       | `net/http` standard library + middleware pattern                |
-| Tool Registration | `handlers/registration.go` — `RegisterTools()` function         |
+| Tool Registration | `handlers/registration.go` — `RegisterTools(srv, metrics, svc)` |
+| DI Pattern        | Explicit constructor injection (no context-based lookups)       |
 | Metrics           | Prometheus (Go runtime + custom MCP metrics) on port 8081       |
 
 ## Configuration (Environment Variables)
@@ -134,7 +135,7 @@ Search for images. Convenience wrapper around `search` with presets: `categories
 
 ## Middleware Chain
 
-The server applies five middleware layers to every HTTP request, executed in this order (outermost first).
+The server applies five middleware layers to every HTTP request before reaching the MCP Streamable HTTP handler, executed in this order (outermost first). The search service is injected directly into tool handlers at registration time (via `RegisterTools`), so no service-injection middleware is needed.
 
 ### 1. RecoveryMiddleware (`handlers/middleware.go`)
 
@@ -169,10 +170,6 @@ Limits the request body size to 1 MB using `http.MaxBytesReader`.
 ### 5. LoggingMiddleware (`handlers/middleware.go`)
 
 Reads and buffers the request body to parse the JSON-RPC method name, validates batch size (max 100), and logs a single line at INFO level with the `mcp_log` prefix.
-
-### 6. injectClientMiddleware (`cmd/server/main.go`)
-
-Creates the SearXNG API client using a shared `http.Client` with connection pooling and creates the search service, storing it in the request context.
 
 ## Error Handling
 
@@ -268,9 +265,9 @@ gremlins unleash handlers application infrastructure/searxng config
 
 1. Define input/output types in `handlers/tools.go`
 2. Write the handler factory function in `handlers/tools.go`
-3. Register the tool via `RegisterTools()` in `handlers/registration.go`
+3. Register the tool via `RegisterTools()` in `handlers/registration.go` (pass the search service explicitly as a parameter)
 4. If a new domain entity is needed, define it in `domain/` and add a repository interface
-5. If a new service is needed, wire it in `injectClientMiddleware` (`cmd/server/main.go`)
+5. If a new service or dependency is needed, wire it in `Run()` (`cmd/server/main.go`) and pass it to `RegisterTools`
 
 ### Dependency Management
 

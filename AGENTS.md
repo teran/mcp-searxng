@@ -60,15 +60,17 @@ The server exposes Prometheus metrics on a separate HTTP server (default port `:
 
 ## CI Pipeline
 
-Every commit on any branch is checked by three workflows:
+Every commit on any branch is checked by:
 
 1. **golangci-lint** — static analysis with `gosec` enabled.
 2. **go test** — unit tests with coverage profile (uploaded as artifact).
-3. **gremlins unleash** — mutation testing on packages with highest coverage (`handlers`, `application`, `infrastructure/searxng`, `config`). Runs as `continue-on-error` — informational only, does not block the PR.
+3. **Coverage gate** — total test coverage must be at least **85%** (checked via `go tool cover` after tests).
+4. **gremlins unleash** — mutation testing on packages with highest coverage (`handlers`, `application`, `infrastructure/searxng`, `config`). Runs as `continue-on-error` — informational only, does not block the PR.
 
 Workflow files:
-- `.github/workflows/ci.yml` — lint + test + coverage upload
+- `.github/workflows/ci.yml` — lint + test + coverage upload + coverage gate
 - `.github/workflows/gremlins.yml` — mutation testing
+- `.github/workflows/master.yml` — snapshot Docker image on push to master
 - `.github/workflows/release.yml` — goreleaser + multi-arch Docker build
 
 ## Development Agents

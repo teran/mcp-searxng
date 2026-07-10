@@ -127,33 +127,6 @@ func TestRegisterMetricsOnRegistry(t *testing.T) {
 	}
 }
 
-func TestStatusCodeToClass(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		code int
-		want string
-	}{
-		{200, "2xx"},
-		{201, "2xx"},
-		{301, "3xx"},
-		{400, "4xx"},
-		{404, "4xx"},
-		{500, "5xx"},
-		{503, "5xx"},
-		{99, "unknown"},
-		{600, "5xx"},
-	}
-
-	for _, tt := range tests {
-		t.Run(fmt.Sprintf("code %d", tt.code), func(t *testing.T) {
-			if got := statusCodeToClass(tt.code); got != tt.want {
-				t.Errorf("statusCodeToClass(%d) = %q, want %q", tt.code, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestWrapToolHandler_ErrorTypes(t *testing.T) {
 	t.Parallel()
 

@@ -93,23 +93,6 @@ func MetricsMiddleware(metrics *Metrics) func(http.Handler) http.Handler {
 	}
 }
 
-// statusCodeToClass converts an HTTP status code into a broad class label
-// suitable for Prometheus metric labels (e.g. "2xx", "4xx", "5xx").
-func statusCodeToClass(code int) string {
-	switch {
-	case code >= 200 && code < 300:
-		return "2xx"
-	case code >= 300 && code < 400:
-		return "3xx"
-	case code >= 400 && code < 500:
-		return "4xx"
-	case code >= 500:
-		return "5xx"
-	default:
-		return "unknown"
-	}
-}
-
 // RegisterMetricsOnRegistry registers the standard Go runtime and custom MCP
 // metrics on the same registry, then returns an http.Handler for /metrics.
 func RegisterMetricsOnRegistry(reg *prometheus.Registry) http.Handler {
