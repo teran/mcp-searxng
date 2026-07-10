@@ -123,7 +123,7 @@ func searchHelper(ctx context.Context, svc *application.SearchService, params do
 
 	result, err := svc.Search(ctx, params)
 	if err != nil {
-		return SearchOutput{}, fmt.Errorf("search: %w", ErrSearchFailed)
+		return SearchOutput{}, err
 	}
 
 	items := make([]SearchResultItem, 0, len(result.Results))
