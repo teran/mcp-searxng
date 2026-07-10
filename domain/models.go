@@ -2,17 +2,17 @@ package domain
 
 // SearchResult represents a single search result from SearXNG.
 type SearchResult struct {
-	Title         string  `json:"title"`
-	URL           string  `json:"url"`
-	Content       string  `json:"content"`
-	Engine        string  `json:"engine"`
-	Template      string  `json:"template,omitempty"`
-	PublishedDate *string `json:"publishedDate,omitempty"`
-	Category      string  `json:"category,omitempty"`
-	ImgSrc        *string `json:"img_src,omitempty"`
-	Source        *string `json:"source,omitempty"`
-	EngineAvatar  *string `json:"engine_avatar,omitempty"`
-	ParsedURL     *string `json:"parsed_url,omitempty"`
+	Title         string   `json:"title"`
+	URL           string   `json:"url"`
+	Content       string   `json:"content"`
+	Engine        string   `json:"engine"`
+	Template      string   `json:"template,omitempty"`
+	PublishedDate *string  `json:"publishedDate,omitempty"`
+	Category      string   `json:"category,omitempty"`
+	ImgSrc        *string  `json:"img_src,omitempty"`
+	Source        *string  `json:"source,omitempty"`
+	EngineAvatar  *string  `json:"engine_avatar,omitempty"`
+	ParsedURL     []string `json:"parsed_url,omitempty"`
 }
 
 // Infobox represents an infobox result from SearXNG.

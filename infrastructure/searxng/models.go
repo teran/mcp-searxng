@@ -1,13 +1,17 @@
 package searxng
 
-import "github.com/teran/mcp-searxng/domain"
+import (
+	"encoding/json"
+
+	"github.com/teran/mcp-searxng/domain"
+)
 
 // raw models — JSON representation matching SearXNG Search API wire format.
 
 type rawSearchResponse struct {
 	Query           string            `json:"query"`
 	Results         []rawSearchResult `json:"results"`
-	Answers         []string          `json:"answers,omitempty"`
+	Answers         []json.RawMessage `json:"answers,omitempty"`
 	Infoboxes       []rawInfobox      `json:"infoboxes,omitempty"`
 	Suggestions     []string          `json:"suggestions,omitempty"`
 	NumberOfResults int               `json:"number_of_results,omitempty"`
@@ -15,17 +19,17 @@ type rawSearchResponse struct {
 }
 
 type rawSearchResult struct {
-	Title         string  `json:"title"`
-	URL           string  `json:"url"`
-	Content       string  `json:"content"`
-	Engine        string  `json:"engine"`
-	Template      string  `json:"template,omitempty"`
-	PublishedDate *string `json:"publishedDate,omitempty"`
-	Category      string  `json:"category,omitempty"`
-	ImgSrc        *string `json:"img_src,omitempty"`
-	Source        *string `json:"source,omitempty"`
-	EngineAvatar  *string `json:"engine_avatar,omitempty"`
-	ParsedURL     *string `json:"parsed_url,omitempty"`
+	Title         string   `json:"title"`
+	URL           string   `json:"url"`
+	Content       string   `json:"content"`
+	Engine        string   `json:"engine"`
+	Template      string   `json:"template,omitempty"`
+	PublishedDate *string  `json:"publishedDate,omitempty"`
+	Category      string   `json:"category,omitempty"`
+	ImgSrc        *string  `json:"img_src,omitempty"`
+	Source        *string  `json:"source,omitempty"`
+	EngineAvatar  *string  `json:"engine_avatar,omitempty"`
+	ParsedURL     []string `json:"parsed_url,omitempty"`
 }
 
 type rawInfobox struct {
@@ -77,7 +81,7 @@ func (r rawSearchResponse) toDomain() domain.SearchResponse {
 
 	answers := make([]domain.AnswerResult, 0, len(r.Answers))
 	for _, a := range r.Answers {
-		answers = append(answers, domain.AnswerResult(a))
+		answers = append(answers, rawAnswerToString(a))
 	}
 
 	return domain.SearchResponse{
@@ -147,6 +151,21 @@ func (r rawInfoboxAttribute) toDomain() domain.InfoboxAttribute {
 		Key:   r.Key,
 		Value: r.Value,
 	}
+}
+
+// rawAnswerToString converts a json.RawMessage answer to domain.AnswerResult.
+// It handles both plain strings and objects by JSON-marshaling objects back to string.
+func rawAnswerToString(a json.RawMessage) domain.AnswerResult {
+	var s string
+	if err := json.Unmarshal(a, &s); err == nil {
+		return domain.AnswerResult(s)
+	}
+	// If it's not a plain string (e.g. an object), marshal it back to JSON string.
+	b, err := json.Marshal(a)
+	if err != nil {
+		return domain.AnswerResult(string(a))
+	}
+	return domain.AnswerResult(string(b))
 }
 
 func (r rawInfoboxDetail) toDomain() domain.InfoboxDetail {
