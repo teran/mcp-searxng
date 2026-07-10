@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -38,6 +39,7 @@ type SearchResultItem struct {
 	Engine        string  `json:"engine"`
 	Category      string  `json:"category,omitempty"`
 	PublishedDate *string `json:"publishedDate,omitempty"`
+	FormattedDate string  `json:"formattedDate,omitempty"`
 	ImgSrc        *string `json:"img_src,omitempty"`
 	Source        *string `json:"source,omitempty"`
 }
@@ -55,6 +57,28 @@ type SearchOutput struct {
 	Suggestions     []string           `json:"suggestions,omitempty"`
 	Infoboxes       []InfoboxItem      `json:"infoboxes,omitempty"`
 	NumberOfResults int                `json:"number_of_results"`
+}
+
+// FormatDate converts an ISO 8601 date string to a readable format (e.g. "10 Jul 2026").
+// Returns empty string if the input is nil.
+func FormatDate(d *string) string {
+	if d == nil || *d == "" {
+		return ""
+	}
+
+	t, err := time.Parse(time.RFC3339, *d)
+	if err != nil {
+		// Try other common ISO 8601 formats.
+		t, err = time.Parse("2006-01-02T15:04:05", *d)
+		if err != nil {
+			t, err = time.Parse("2006-01-02", *d)
+			if err != nil {
+				return ""
+			}
+		}
+	}
+
+	return t.Format("2 Jan 2006")
 }
 
 // ============================================================
@@ -92,6 +116,7 @@ func NewSearchHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchI
 				Engine:        r.Engine,
 				Category:      r.Category,
 				PublishedDate: r.PublishedDate,
+				FormattedDate: FormatDate(r.PublishedDate),
 				ImgSrc:        r.ImgSrc,
 				Source:        r.Source,
 			})

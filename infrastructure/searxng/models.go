@@ -25,6 +25,7 @@ type rawSearchResult struct {
 	Engine        string   `json:"engine"`
 	Template      string   `json:"template,omitempty"`
 	PublishedDate *string  `json:"publishedDate,omitempty"`
+	PubDate       *string  `json:"pubdate,omitempty"`
 	Category      string   `json:"category,omitempty"`
 	ImgSrc        *string  `json:"img_src,omitempty"`
 	Source        *string  `json:"source,omitempty"`
@@ -96,13 +97,18 @@ func (r rawSearchResponse) toDomain() domain.SearchResponse {
 }
 
 func (r rawSearchResult) toDomain() domain.SearchResult {
+	publishedDate := r.PublishedDate
+	if publishedDate == nil && r.PubDate != nil {
+		publishedDate = r.PubDate
+	}
+
 	return domain.SearchResult{
 		Title:         r.Title,
 		URL:           r.URL,
 		Content:       r.Content,
 		Engine:        r.Engine,
 		Template:      r.Template,
-		PublishedDate: r.PublishedDate,
+		PublishedDate: publishedDate,
 		Category:      r.Category,
 		ImgSrc:        r.ImgSrc,
 		Source:        r.Source,
