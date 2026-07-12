@@ -47,7 +47,7 @@ This server exposes SearXNG search functionality through the MCP protocol using 
 | `PROMETHEUS_METRICS_ADDR` | No    | `:8081` | TCP address for the Prometheus `/metrics` endpoint (separate HTTP server, no auth) |
 | `RATE_LIMIT_GLOBAL`    | No       | `100`   | Global rate limit (requests/second)  |
 | `RATE_LIMIT_PER_CLIENT`| No       | `10`    | Per-client IP rate limit (requests/second) |
-| `WRITE_TIMEOUT`        | No       | `300s`  | HTTP write timeout (Go duration, e.g. `300s`, `5m`) |
+| `WRITE_TIMEOUT`        | No       | `60s`   | HTTP write timeout (Go duration, e.g. `60s`, `5m`) |
 
 The MCP server listens on the `/` HTTP path via the Streamable HTTP handler.
 
@@ -197,6 +197,33 @@ Reads and buffers the request body to parse the JSON-RPC method name, validates 
 - HTTP redirects are disabled (`CheckRedirect: http.ErrUseLastResponse`).
 - Response bodies from SearXNG are limited to 10 MB via `io.LimitReader`.
 - **Prometheus metrics** are exposed on a separate HTTP server (default `:8081`) with no built-in authentication.
+
+### LLM Security (OWASP Top 10)
+
+**Indirect Prompt Injection (LLM01):**
+- All search result fields (`Title`, `Content`, `URL`, `Answers`, `Suggestions`, `Infoboxes`) are sanitized before returning to the MCP client:
+  - Control characters (0x00—0x1f, 0x7f) are stripped
+  - Unicode bidi formatting characters (LRM, RLM, LRE, RLE, PDF, LRO, RLO, LRI, RLI, FSI, PDI) are removed
+  - Tabs, newlines, and carriage returns are preserved for readability
+- See `sanitizeOutput()` in `handlers/tools.go`.
+
+**Insecure Output Handling (LLM02):**
+- Result URLs are validated and restricted to `http` and `https` schemes only; `javascript:`, `data:`, `file:`, and other schemes are rejected
+- Image source URLs allow only `http`, `https`, and `data` schemes
+- See `sanitizeURL()` and `sanitizeImgSrc()` in `handlers/tools.go`.
+
+**Model Denial of Service (LLM04):**
+- Request body limited to 1 MB (`BodyLimitMiddleware`)
+- Response body from SearXNG limited to 10 MB
+- Query length limited to 512 characters (`MaxQueryLength`)
+- Page number limited to 100 (`MaxPageNumber`)
+- Global (100 rps) and per-client (10 rps) rate limiting
+- Batch request limit: 100 items
+- HTTP write timeout: 60 seconds (default)
+
+**Insecure Plugin Design (LLM07):**
+- Search query input is validated for length and emptiness before processing
+- Page number is validated against an upper bound
 
 ## Development
 

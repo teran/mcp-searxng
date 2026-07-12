@@ -61,8 +61,8 @@ func TestLoad(t *testing.T) {
 		if cfg.RateLimitPerClient != 10 {
 			t.Errorf("RateLimitPerClient = %d, want 10", cfg.RateLimitPerClient)
 		}
-		if cfg.WriteTimeout != 300*time.Second {
-			t.Errorf("WriteTimeout = %v, want %v", cfg.WriteTimeout, 300*time.Second)
+		if cfg.WriteTimeout != 60*time.Second {
+			t.Errorf("WriteTimeout = %v, want %v", cfg.WriteTimeout, 60*time.Second)
 		}
 	})
 }
