@@ -67,6 +67,7 @@ Search the web using SearXNG. Returns search results, answers, suggestions, and 
 | `page`       | int      | no       | Search page number (default: 1)                    |
 | `time_range` | string   | no       | Time range: `day`, `month`, `year`                 |
 | `safesearch` | int      | no       | Safe search filter: 0=off, 1=moderate, 2=strict    |
+| `max_results` | uint64  | no       | Maximum number of results to return (nil = unlimited) |
 
 **Output**:
 
@@ -111,6 +112,7 @@ Search for news. Convenience wrapper around `search` with presets: `categories=[
 | `language`   | string   | no       | Code of the language (e.g. en-US, de-DE, ru-RU)   |
 | `page`       | int      | no       | Search page number (default: 1)                    |
 | `safesearch` | int      | no       | Safe search filter: 0=off, 1=moderate, 2=strict    |
+| `max_results` | uint64  | no       | Maximum number of results to return (nil = unlimited) |
 
 **Output**: Same as `search`.
 
@@ -128,6 +130,7 @@ Search for images. Convenience wrapper around `search` with presets: `categories
 | `language`   | string   | no       | Code of the language (e.g. en-US, de-DE, ru-RU)   |
 | `page`       | int      | no       | Search page number (default: 1)                    |
 | `safesearch` | int      | no       | Safe search filter: 0=off, 1=moderate, 2=strict    |
+| `max_results` | uint64  | no       | Maximum number of results to return (nil = unlimited) |
 
 **Output**: Same as `search`.
 

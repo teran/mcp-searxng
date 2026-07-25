@@ -44,6 +44,7 @@ type SearchInput struct {
 	Page       int      `json:"page,omitempty" jsonschema:"search page number,default=1"`
 	TimeRange  string   `json:"time_range,omitempty" jsonschema:"time range of search: day, month, year"`
 	SafeSearch int      `json:"safesearch,omitempty" jsonschema:"filter search results: 0=off, 1=moderate, 2=strict"`
+	MaxResults *uint64  `json:"max_results,omitempty" jsonschema:"maximum number of results to return, nil=unlimited"`
 }
 
 type SearchResultItem struct {
@@ -90,19 +91,21 @@ type SearchOutput struct {
 // --- search_news ---
 
 type SearchNewsInput struct {
-	Query      string `json:"query" jsonschema:"the search query,required"`
-	Language   string `json:"language,omitempty" jsonschema:"code of the language (e.g. en-US, de-DE)"`
-	Page       int    `json:"page,omitempty" jsonschema:"search page number,default=1"`
-	SafeSearch int    `json:"safesearch,omitempty" jsonschema:"filter search results: 0=off, 1=moderate, 2=strict"`
+	Query      string  `json:"query" jsonschema:"the search query,required"`
+	Language   string  `json:"language,omitempty" jsonschema:"code of the language (e.g. en-US, de-DE)"`
+	Page       int     `json:"page,omitempty" jsonschema:"search page number,default=1"`
+	SafeSearch int     `json:"safesearch,omitempty" jsonschema:"filter search results: 0=off, 1=moderate, 2=strict"`
+	MaxResults *uint64 `json:"max_results,omitempty" jsonschema:"maximum number of results to return, nil=unlimited"`
 }
 
 // --- search_images ---
 
 type SearchImagesInput struct {
-	Query      string `json:"query" jsonschema:"the search query,required"`
-	Page       int    `json:"page,omitempty" jsonschema:"search page number,default=1"`
-	SafeSearch int    `json:"safesearch,omitempty" jsonschema:"filter search results: 0=off, 1=moderate, 2=strict"`
-	Language   string `json:"language,omitempty" jsonschema:"code of the language (e.g. en-US, de-DE)"`
+	Query      string  `json:"query" jsonschema:"the search query,required"`
+	Page       int     `json:"page,omitempty" jsonschema:"search page number,default=1"`
+	SafeSearch int     `json:"safesearch,omitempty" jsonschema:"filter search results: 0=off, 1=moderate, 2=strict"`
+	Language   string  `json:"language,omitempty" jsonschema:"code of the language (e.g. en-US, de-DE)"`
+	MaxResults *uint64 `json:"max_results,omitempty" jsonschema:"maximum number of results to return, nil=unlimited"`
 }
 
 // formatDate converts an ISO 8601 date string to a readable format (e.g. "10 Jul 2026").
@@ -205,7 +208,8 @@ func sanitizeImgSrc(s *string) *string {
 }
 
 // searchHelper performs a search and converts the result to SearchOutput.
-func searchHelper(ctx context.Context, svc *application.SearchService, params domain.SearchParams) (SearchOutput, error) {
+// If maxResults is non-nil, the results slice is truncated to the specified length.
+func searchHelper(ctx context.Context, svc *application.SearchService, params domain.SearchParams, maxResults *uint64) (SearchOutput, error) {
 	page := params.Page
 	if page <= 0 {
 		page = 1
@@ -217,8 +221,15 @@ func searchHelper(ctx context.Context, svc *application.SearchService, params do
 		return SearchOutput{}, err
 	}
 
-	items := make([]SearchResultItem, 0, len(result.Results))
-	for _, r := range result.Results {
+	// Apply truncation before building output items.
+	results := result.Results
+	if maxResults != nil && *maxResults < uint64(len(results)) {
+		// #nosec G115 — safe because we checked *maxResults < len(results)
+		results = results[:int(*maxResults)]
+	}
+
+	items := make([]SearchResultItem, 0, len(results))
+	for _, r := range results {
 		items = append(items, SearchResultItem{
 			Title:         sanitizeOutput(r.Title),
 			URL:           sanitizeURL(r.URL),
@@ -324,7 +335,7 @@ func NewSearchHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchI
 			Page:       input.Page,
 			TimeRange:  input.TimeRange,
 			SafeSearch: input.SafeSearch,
-		})
+		}, input.MaxResults)
 		if err != nil {
 			log.Printf("ERROR search: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search: %w", ErrSearchFailed)
@@ -352,7 +363,7 @@ func NewSearchNewsHandler(svc *application.SearchService) mcp.ToolHandlerFor[Sea
 			Page:       input.Page,
 			TimeRange:  "day",
 			SafeSearch: input.SafeSearch,
-		})
+		}, input.MaxResults)
 		if err != nil {
 			log.Printf("ERROR search_news: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_news: %w", ErrSearchFailed)
@@ -379,7 +390,7 @@ func NewSearchImagesHandler(svc *application.SearchService) mcp.ToolHandlerFor[S
 			Language:   input.Language,
 			Page:       input.Page,
 			SafeSearch: input.SafeSearch,
-		})
+		}, input.MaxResults)
 		if err != nil {
 			log.Printf("ERROR search_images: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_images: %w", ErrSearchFailed)
