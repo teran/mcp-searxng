@@ -136,6 +136,24 @@ Search for images. Convenience wrapper around `search` with presets: `categories
 
 ---
 
+### 4. `search_videos`
+
+Search for videos. Convenience wrapper around `search` with presets: `categories=["videos"]`.
+
+**Input**:
+
+| Parameter    | Type     | Required | Description                                        |
+|--------------|----------|----------|----------------------------------------------------|
+| `query`      | string   | yes      | The search query                                   |
+| `language`   | string   | no       | Code of the language (e.g. en-US, de-DE, ru-RU)   |
+| `page`       | int      | no       | Search page number (default: 1)                    |
+| `safesearch` | int      | no       | Safe search filter: 0=off, 1=moderate, 2=strict    |
+| `max_results` | uint64  | no       | Maximum number of results to return (nil = unlimited) |
+
+**Output**: Same as `search`.
+
+---
+
 ## Middleware Chain
 
 The server applies five middleware layers to every HTTP request before reaching the MCP Streamable HTTP handler, executed in this order (outermost first). The search service is injected directly into tool handlers at registration time (via `RegisterTools`), so no service-injection middleware is needed.

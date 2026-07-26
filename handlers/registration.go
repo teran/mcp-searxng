@@ -33,4 +33,10 @@ func RegisterTools(s *mcp.Server, metrics *Metrics, svc *application.SearchServi
 		return NewSearchImagesHandler(svc)(ctx, nil, in)
 	}))
 
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "search_videos",
+		Description: "Search videos using SearXNG. Convenience wrapper around search with categories=[videos].",
+	}, WrapToolHandler(metrics, "search_videos", func(ctx context.Context, _ *mcp.CallToolRequest, in SearchVideosInput) (*mcp.CallToolResult, SearchOutput, error) {
+		return NewSearchVideosHandler(svc)(ctx, nil, in)
+	}))
 }
