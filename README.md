@@ -74,6 +74,7 @@ The MCP server has no built-in authentication. SearXNG API access is controlled 
 | `search` | Web search with full parameter support (categories, language, time range, safe search, pagination) |
 | `search_news` | News search — convenience wrapper with preset `categories=["news"], time_range="day"` |
 | `search_images` | Image search — convenience wrapper with preset `categories=["images"]` |
+| `search_videos` | Video search — convenience wrapper with preset `categories=["videos"]` |
 
 ## Configuration
 

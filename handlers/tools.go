@@ -108,6 +108,16 @@ type SearchImagesInput struct {
 	MaxResults *uint64 `json:"max_results,omitempty" jsonschema:"maximum number of results to return, nil=unlimited"`
 }
 
+// --- search_videos ---
+
+type SearchVideosInput struct {
+	Query      string  `json:"query" jsonschema:"the search query,required"`
+	Page       int     `json:"page,omitempty" jsonschema:"search page number,default=1"`
+	SafeSearch int     `json:"safesearch,omitempty" jsonschema:"filter search results: 0=off, 1=moderate, 2=strict"`
+	Language   string  `json:"language,omitempty" jsonschema:"code of the language (e.g. en-US, de-DE)"`
+	MaxResults *uint64 `json:"max_results,omitempty" jsonschema:"maximum number of results to return, nil=unlimited"`
+}
+
 // formatDate converts an ISO 8601 date string to a readable format (e.g. "10 Jul 2026").
 // Returns empty string if the input is nil.
 func formatDate(d *string) string {
@@ -394,6 +404,33 @@ func NewSearchImagesHandler(svc *application.SearchService) mcp.ToolHandlerFor[S
 		if err != nil {
 			log.Printf("ERROR search_images: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_images: %w", ErrSearchFailed)
+		}
+		return nil, output, nil
+	}
+}
+
+// NewSearchVideosHandler creates a handler for search_videos with presets: categories=["videos"].
+func NewSearchVideosHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchVideosInput, SearchOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchVideosInput) (*mcp.CallToolResult, SearchOutput, error) {
+		if err := validateQuery(input.Query); err != nil {
+			log.Printf("ERROR search_videos validation: %s", SanitizeLog(err.Error()))
+			return nil, SearchOutput{}, fmt.Errorf("search_videos: %w", err)
+		}
+		if err := validatePage(input.Page); err != nil {
+			log.Printf("ERROR search_videos validation: %s", SanitizeLog(err.Error()))
+			return nil, SearchOutput{}, fmt.Errorf("search_videos: %w", err)
+		}
+
+		output, err := searchHelper(ctx, svc, domain.SearchParams{
+			Query:      input.Query,
+			Categories: []string{"videos"},
+			Language:   input.Language,
+			Page:       input.Page,
+			SafeSearch: input.SafeSearch,
+		}, input.MaxResults)
+		if err != nil {
+			log.Printf("ERROR search_videos: %s", SanitizeLog(err.Error()))
+			return nil, SearchOutput{}, fmt.Errorf("search_videos: %w", ErrSearchFailed)
 		}
 		return nil, output, nil
 	}
