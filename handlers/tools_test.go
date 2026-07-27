@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -1069,6 +1070,210 @@ func TestSearchHelper_MaxResults_EdgeCases(t *testing.T) {
 		}
 		if output.Results[0].Title != "Result 1" {
 			t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "Result 1")
+		}
+	})
+}
+
+func TestNewSearchHandler_Validation(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{Query: "ignored"}, nil
+		},
+	}
+	svc := newMockService(repo)
+
+	t.Run("empty query returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+			Query: "",
+		})
+		if err == nil {
+			t.Fatal("expected error for empty query, got nil")
+		}
+		if !errors.Is(err, handlers.ErrInvalidQuery) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrInvalidQuery)
+		}
+	})
+
+	t.Run("query too long returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchHandler(svc)
+		longQuery := strings.Repeat("a", 513)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+			Query: longQuery,
+		})
+		if err == nil {
+			t.Fatal("expected error for long query, got nil")
+		}
+		if !errors.Is(err, handlers.ErrQueryTooLong) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrQueryTooLong)
+		}
+	})
+
+	t.Run("page too large returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+			Query: "test",
+			Page:  101,
+		})
+		if err == nil {
+			t.Fatal("expected error for large page, got nil")
+		}
+		if !errors.Is(err, handlers.ErrPageTooLarge) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrPageTooLarge)
+		}
+	})
+}
+
+func TestNewSearchMusicHandler_Validation(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{Query: "ignored"}, nil
+		},
+	}
+	svc := newMockService(repo)
+
+	t.Run("empty query returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchMusicHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
+			Query: "",
+		})
+		if err == nil {
+			t.Fatal("expected error for empty query, got nil")
+		}
+		if !errors.Is(err, handlers.ErrInvalidQuery) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrInvalidQuery)
+		}
+	})
+
+	t.Run("page too large returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchMusicHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
+			Query: "test",
+			Page:  101,
+		})
+		if err == nil {
+			t.Fatal("expected error for large page, got nil")
+		}
+		if !errors.Is(err, handlers.ErrPageTooLarge) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrPageTooLarge)
+		}
+	})
+}
+
+func TestNewSearchNewsHandler_Validation(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{Query: "ignored"}, nil
+		},
+	}
+	svc := newMockService(repo)
+
+	t.Run("empty query returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchNewsHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
+			Query: "",
+		})
+		if err == nil {
+			t.Fatal("expected error for empty query, got nil")
+		}
+		if !errors.Is(err, handlers.ErrInvalidQuery) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrInvalidQuery)
+		}
+	})
+
+	t.Run("page too large returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchNewsHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
+			Query: "test",
+			Page:  101,
+		})
+		if err == nil {
+			t.Fatal("expected error for large page, got nil")
+		}
+		if !errors.Is(err, handlers.ErrPageTooLarge) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrPageTooLarge)
+		}
+	})
+}
+
+func TestNewSearchImagesHandler_Validation(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{Query: "ignored"}, nil
+		},
+	}
+	svc := newMockService(repo)
+
+	t.Run("empty query returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchImagesHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
+			Query: "",
+		})
+		if err == nil {
+			t.Fatal("expected error for empty query, got nil")
+		}
+		if !errors.Is(err, handlers.ErrInvalidQuery) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrInvalidQuery)
+		}
+	})
+
+	t.Run("page too large returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchImagesHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
+			Query: "test",
+			Page:  101,
+		})
+		if err == nil {
+			t.Fatal("expected error for large page, got nil")
+		}
+		if !errors.Is(err, handlers.ErrPageTooLarge) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrPageTooLarge)
+		}
+	})
+}
+
+func TestNewSearchVideosHandler_Validation(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{Query: "ignored"}, nil
+		},
+	}
+	svc := newMockService(repo)
+
+	t.Run("empty query returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchVideosHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
+			Query: "",
+		})
+		if err == nil {
+			t.Fatal("expected error for empty query, got nil")
+		}
+		if !errors.Is(err, handlers.ErrInvalidQuery) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrInvalidQuery)
+		}
+	})
+
+	t.Run("page too large returns validation error", func(t *testing.T) {
+		handler := handlers.NewSearchVideosHandler(svc)
+		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
+			Query: "test",
+			Page:  101,
+		})
+		if err == nil {
+			t.Fatal("expected error for large page, got nil")
+		}
+		if !errors.Is(err, handlers.ErrPageTooLarge) {
+			t.Errorf("error = %v, want %v", err, handlers.ErrPageTooLarge)
 		}
 	})
 }
