@@ -39,4 +39,11 @@ func RegisterTools(s *mcp.Server, metrics *Metrics, svc *application.SearchServi
 	}, WrapToolHandler(metrics, "search_videos", func(ctx context.Context, _ *mcp.CallToolRequest, in SearchVideosInput) (*mcp.CallToolResult, SearchOutput, error) {
 		return NewSearchVideosHandler(svc)(ctx, nil, in)
 	}))
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "search_music",
+		Description: "Search music using SearXNG. Convenience wrapper around search with categories=[music].",
+	}, WrapToolHandler(metrics, "search_music", func(ctx context.Context, _ *mcp.CallToolRequest, in SearchMusicInput) (*mcp.CallToolResult, SearchOutput, error) {
+		return NewSearchMusicHandler(svc)(ctx, nil, in)
+	}))
 }
