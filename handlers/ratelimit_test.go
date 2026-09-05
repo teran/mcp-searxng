@@ -44,6 +44,12 @@ func TestExtractClientIP(t *testing.T) {
 			expected: "203.0.113.1",
 		},
 		{
+			name:     "X-Forwarded-For single IP with port",
+			headers:  map[string]string{"X-Forwarded-For": "203.0.113.1:8080"},
+			remote:   "192.168.1.1:5678",
+			expected: "203.0.113.1",
+		},
+		{
 			name:     "RemoteAddr fallback",
 			remote:   "192.168.1.1:5678",
 			expected: "192.168.1.1",
@@ -220,6 +226,33 @@ func TestRateLimiterEvictExpired(t *testing.T) {
 		}
 		if _, exists := rl.clients["fresh"]; !exists {
 			t.Error("fresh client should not have been evicted")
+		}
+	})
+}
+
+func TestRateLimiterStop(t *testing.T) {
+	t.Parallel()
+
+	t.Run("stop terminates the eviction goroutine", func(t *testing.T) {
+		rl := NewRateLimiter(RateLimiterConfig{
+			GlobalLimit:    rate.Limit(100),
+			GlobalBurst:    100,
+			PerClientLimit: rate.Limit(10),
+			PerClientBurst: 10,
+		})
+
+		// Let the background goroutine spin up.
+		if !rl.Allow("10.0.0.1") {
+			t.Fatal("first request should be allowed")
+		}
+
+		// Stop should close the stop channel and cause the eviction goroutine
+		// to return; the limiter remains usable for reads after stopping.
+		rl.Stop()
+
+		// A second read should not panic and the limiter should remain consistent.
+		if !rl.Allow("10.0.0.2") {
+			t.Error("Allow after Stop should still function")
 		}
 	})
 }

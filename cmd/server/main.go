@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"os/signal"
 	"syscall"
 	"time"
@@ -39,12 +40,43 @@ func main() {
 	}
 }
 
-// Run creates and starts the MCP HTTP server, metrics server, and
-// waits for a signal (SIGTERM/SIGINT) or server error to trigger
-// graceful shutdown. It returns nil on successful shutdown or an
-// error only if a non-recoverable failure occurs before the servers
-// are started.
+// Run binds the main and metrics listeners from cfg and starts the MCP HTTP
+// server, metrics server, waiting for a signal (SIGTERM/SIGINT) or server
+// error to trigger graceful shutdown. It returns an error only if a listener
+// cannot be bound (fail fast), or on successful shutdown returns nil.
 func Run(cfg config.Config) error {
+	bindCtx := context.Background()
+
+	mainLn, err := (&net.ListenConfig{}).Listen(bindCtx, "tcp", cfg.ListenAddr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
+	}
+	defer func() { _ = mainLn.Close() }()
+
+	metricsLn, err := (&net.ListenConfig{}).Listen(bindCtx, "tcp", cfg.PrometheusMetricsAddr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", cfg.PrometheusMetricsAddr, err)
+	}
+	defer func() { _ = metricsLn.Close() }()
+
+	// Wire OS signals to a cancellable context. In production this is what
+	// triggers graceful shutdown on SIGTERM/SIGINT; in tests a plain cancellable
+	// context is used instead (no process-global signal races).
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	return run(ctx, cfg, mainLn, metricsLn)
+}
+
+// run starts the MCP HTTP server and metrics server on the provided
+// pre-bound listeners and waits for ctx cancellation or a server error to
+// trigger graceful shutdown. It returns nil on successful shutdown.
+//
+// Accepting pre-bound listeners (instead of binding by address) is what
+// eliminates the free-port-then-rebind TOCTOU race in tests: the caller binds
+// a listener exactly once and hands ownership to the server. Using ctx (rather
+// than a raw OS signal) makes shutdown deterministic and testable.
+func run(ctx context.Context, cfg config.Config, mainLn, metricsLn net.Listener) error {
 	// sharedHTTPClient is reused across requests for connection pooling.
 	// CheckRedirect is set to http.ErrUseLastResponse to prevent credential
 	// forwarding — the http.Client never follows redirects.
@@ -150,32 +182,28 @@ func Run(cfg config.Config) error {
 	errCh := make(chan error, 2)
 
 	go func() {
-		log.Printf("Starting mcp-searxng server on %s", handlers.SanitizeLog(cfg.ListenAddr))
-		if err := mainServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("Starting mcp-searxng server on %s", handlers.SanitizeLog(mainLn.Addr().String()))
+		if err := mainServer.Serve(mainLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
 
 	go func() {
-		log.Printf("Starting Prometheus metrics server on %s", handlers.SanitizeLog(cfg.PrometheusMetricsAddr))
-		if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("Starting Prometheus metrics server on %s", handlers.SanitizeLog(metricsLn.Addr().String()))
+		if err := metricsServer.Serve(metricsLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
 
-	// Wait for SIGTERM or SIGINT for graceful shutdown.
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
-	defer signal.Stop(quit)
-
+	// Wait for ctx cancellation (shutdown signal) or a server error.
 	select {
-	case sig := <-quit:
-		log.Printf("Received signal %v, shutting down...", sig)
+	case <-ctx.Done():
+		log.Printf("Received shutdown signal, shutting down...")
 	case err := <-errCh:
 		log.Printf("Server error: %v", err)
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// Stop the rate limiter background eviction goroutine.

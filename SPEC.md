@@ -53,6 +53,34 @@ The MCP server listens on the `/` HTTP path via the Streamable HTTP handler.
 
 ## MCP Tools
 
+### Tool metadata (Annotations & Instructions)
+
+Every tool is described by MCP `Annotations` (hints) plus per-tool `instructions`. The annotations tell clients how to treat each tool (read-only, idempotent, open-world, non-destructive); the `instructions` are a natural-language guide for the model on how and when to use each tool.
+
+| Tool             | Title            | readOnlyHint | destructiveHint | idempotentHint | openWorldHint |
+|------------------|------------------|--------------|-----------------|----------------|---------------|
+| `search`         | Search the web   | true         | nil             | true           | true          |
+| `search_news`    | Search news      | true         | nil             | true           | true          |
+| `search_images`  | Search images    | true         | nil             | true           | true          |
+| `search_videos`  | Search videos    | true         | nil             | true           | true          |
+| `search_music`   | Search music     | true         | nil             | true           | true          |
+
+All search tools share the same hint profile:
+
+- `title` — human-readable display name (shown to users before `name`).
+- `readOnlyHint = true` — the tool never modifies its environment.
+- `destructiveHint = nil` — not destructive (no write/delete side effects).
+- `idempotentHint = true` — calling repeatedly with the same arguments has no additional effect.
+- `openWorldHint = true` — the tool interacts with an open world of external entities (the whole web).
+
+**Per-tool `instructions`** (for the calling model):
+
+- `search` — Use for general web queries when you need current information, definitions, facts, or links. Provide a concise `query`; optionally narrow with `categories`, `language`, `time_range`, `safesearch`, or `max_results`. Prefer this tool unless the user clearly wants news, images, videos, or music.
+- `search_news` — Use when the user wants recent news or time-sensitive current events. Presets `categories=["news"]` and `time_range="day"`; pass a targeted `query` and optional `language`/`max_results`.
+- `search_images` — Use when the user wants pictures, photos, or visual content. Presets `categories=["images"]`; pass a descriptive `query` and optional `language`/`max_results`.
+- `search_videos` — Use when the user wants video content or clips. Presets `categories=["videos"]`; pass a descriptive `query` and optional `language`/`max_results`.
+- `search_music` — Use when the user wants songs, artists, albums, or audio content. Presets `categories=["music"]`; pass a descriptive `query` and optional `language`/`max_results`.
+
 ### 1. `search`
 
 Search the web using SearXNG. Returns search results, answers, suggestions, and infoboxes.
@@ -237,6 +265,11 @@ Reads and buffers the request body to parse the JSON-RPC method name, validates 
 - Response bodies from SearXNG are limited to 10 MB via `io.LimitReader`.
 - **Prometheus metrics** are exposed on a separate HTTP server (default `:8081`) with no built-in authentication.
 
+**Security-scanner findings policy (S5):**
+- Findings from security scanners (**gosec**, **govulncheck**) are **fixed, never suppressed**.
+- Only **point (line-level)** `//nolint` directives are permitted, and only when they are accompanied by a justification showing the data is already sanitized (e.g. a value passed through `SanitizeLog()` before being logged). Such findings are confirmed false positives.
+- **Blanket suppression** (e.g. `//nolint` without a linter name, whole-file or whole-package `nolint` directives) is **prohibited**.
+
 ### LLM Security (OWASP Top 10)
 
 **Indirect Prompt Injection (LLM01):**
@@ -287,14 +320,23 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   -t ghcr.io/teran/mcp-searxng:latest --push .
 ```
 
+### Development Workflow (TDD)
+
+This project follows **test-driven development (TDD)** — tests are written before the implementation:
+
+1. `@qa` writes the tests first in an **isolated context**, confirming they fail (**red**).
+2. `@developer` implements the functionality in an **isolated context**, driving the tests to pass (**green**).
+3. Every fix and feature is done TDD-style: write a failing test, then make it pass.
+
 ### Quality gates (CI pipeline)
 
 Every commit on any branch is checked by:
 
 1. **golangci-lint** — static analysis with `gosec` enabled.
-2. **go test** — unit tests with coverage profile.
-3. **Coverage gate** — total test coverage must be at least **85%** (checked via `go tool cover` after tests).
-4. **gremlins unleash** — mutation testing (informational, does not block).
+2. **govulncheck** — vulnerability scan of the dependency graph; any finding fails the build and must be fixed (see the S5 policy in Security Considerations).
+3. **go test** — unit tests with coverage profile.
+4. **Coverage gate** — total test coverage must be at least **95%**; the CI fails the build if the total falls below this threshold (checked via `go tool cover` after tests).
+5. **gremlins unleash** — mutation testing (informational, does not block).
 
 ### Linting
 
@@ -312,7 +354,7 @@ go test -race -count=1 ./...
 
 ### Test coverage
 
-The CI enforces a minimum **85% total coverage** gate. To check coverage locally:
+The CI enforces a minimum **95% total coverage** gate and fails the build when the total is below 95%. To check coverage locally:
 
 ```bash
 go test -race -coverprofile=coverage.out -count=1 ./...

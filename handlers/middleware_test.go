@@ -273,6 +273,47 @@ func TestCheckBatchSize(t *testing.T) {
 	})
 }
 
+func TestLoggingMiddleware_BodyLimitReadError(t *testing.T) {
+	t.Parallel()
+
+	t.Run("body exceeding limit returns 413", func(t *testing.T) {
+		// BodyLimitMiddleware wraps the body with MaxBytesReader; when the
+		// LoggingMiddleware tries to read a body larger than the limit,
+		// io.ReadAll returns an error and the middleware responds 413.
+		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Error("next handler should not be called when body read fails")
+		})))
+
+		bigBody := strings.Repeat("x", DefaultMaxRequestBodySize+1)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", strings.NewReader(bigBody))
+		rr := httptest.NewRecorder()
+		chain.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("expected %d, got %d", http.StatusRequestEntityTooLarge, rr.Code)
+		}
+	})
+
+	t.Run("body within limit passes through", func(t *testing.T) {
+		called := false
+		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusOK)
+		})))
+
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", strings.NewReader(`{"method":"ping"}`))
+		rr := httptest.NewRecorder()
+		chain.ServeHTTP(rr, req)
+
+		if !called {
+			t.Error("next handler should be called when body is within limit")
+		}
+		if rr.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rr.Code)
+		}
+	})
+}
+
 func TestLoggingResponseWriter(t *testing.T) {
 	t.Parallel()
 
