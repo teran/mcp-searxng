@@ -321,7 +321,7 @@ Every commit on any branch is checked by:
 
 1. **golangci-lint** — static analysis with `gosec` enabled.
 2. **go test** — unit tests with coverage profile.
-3. **Coverage gate** — total test coverage must be at least **85%** (checked via `go tool cover` after tests).
+3. **Coverage gate** — total test coverage must be at least **95%**; the CI fails the build if the total falls below this threshold (checked via `go tool cover` after tests).
 4. **gremlins unleash** — mutation testing (informational, does not block).
 
 ### Linting
@@ -340,7 +340,7 @@ go test -race -count=1 ./...
 
 ### Test coverage
 
-The CI enforces a minimum **85% total coverage** gate. To check coverage locally:
+The CI enforces a minimum **95% total coverage** gate and fails the build when the total is below 95%. To check coverage locally:
 
 ```bash
 go test -race -coverprofile=coverage.out -count=1 ./...
