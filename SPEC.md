@@ -53,6 +53,34 @@ The MCP server listens on the `/` HTTP path via the Streamable HTTP handler.
 
 ## MCP Tools
 
+### Tool metadata (Annotations & Instructions)
+
+Every tool is described by MCP `Annotations` (hints) plus per-tool `instructions`. The annotations tell clients how to treat each tool (read-only, idempotent, open-world, non-destructive); the `instructions` are a natural-language guide for the model on how and when to use each tool.
+
+| Tool             | Title            | readOnlyHint | destructiveHint | idempotentHint | openWorldHint |
+|------------------|------------------|--------------|-----------------|----------------|---------------|
+| `search`         | Search the web   | true         | nil             | true           | true          |
+| `search_news`    | Search news      | true         | nil             | true           | true          |
+| `search_images`  | Search images    | true         | nil             | true           | true          |
+| `search_videos`  | Search videos    | true         | nil             | true           | true          |
+| `search_music`   | Search music     | true         | nil             | true           | true          |
+
+All search tools share the same hint profile:
+
+- `title` — human-readable display name (shown to users before `name`).
+- `readOnlyHint = true` — the tool never modifies its environment.
+- `destructiveHint = nil` — not destructive (no write/delete side effects).
+- `idempotentHint = true` — calling repeatedly with the same arguments has no additional effect.
+- `openWorldHint = true` — the tool interacts with an open world of external entities (the whole web).
+
+**Per-tool `instructions`** (for the calling model):
+
+- `search` — Use for general web queries when you need current information, definitions, facts, or links. Provide a concise `query`; optionally narrow with `categories`, `language`, `time_range`, `safesearch`, or `max_results`. Prefer this tool unless the user clearly wants news, images, videos, or music.
+- `search_news` — Use when the user wants recent news or time-sensitive current events. Presets `categories=["news"]` and `time_range="day"`; pass a targeted `query` and optional `language`/`max_results`.
+- `search_images` — Use when the user wants pictures, photos, or visual content. Presets `categories=["images"]`; pass a descriptive `query` and optional `language`/`max_results`.
+- `search_videos` — Use when the user wants video content or clips. Presets `categories=["videos"]`; pass a descriptive `query` and optional `language`/`max_results`.
+- `search_music` — Use when the user wants songs, artists, albums, or audio content. Presets `categories=["music"]`; pass a descriptive `query` and optional `language`/`max_results`.
+
 ### 1. `search`
 
 Search the web using SearXNG. Returns search results, answers, suggestions, and infoboxes.
