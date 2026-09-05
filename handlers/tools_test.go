@@ -635,6 +635,67 @@ func TestSearchHelper_MaxResults_PreservesOtherFields(t *testing.T) {
 	})
 }
 
+func TestSearchHelper_InfoboxAttributesAndURLs(t *testing.T) {
+	t.Parallel()
+
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+				Infoboxes: []domain.Infobox{
+					{
+						ID:      "infobox-1",
+						Content: "Infobox content",
+						Engine:  "wikipedia",
+						Attributes: []domain.InfoboxAttribute{
+							{Key: "Population", Value: "8M"},
+							{Key: "Area", Value: "2,000 km²"},
+						},
+						URLs: []domain.InfoboxURL{
+							{Title: "Link 1", URL: "https://example.com/1"},
+							{Title: "Link 2", URL: "https://example.com/2"},
+						},
+					},
+				},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchHandler(svc)
+
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query: "test",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Infoboxes) != 1 {
+		t.Fatalf("len(Infoboxes) = %d, want 1", len(output.Infoboxes))
+	}
+	ib := output.Infoboxes[0]
+
+	if len(ib.Attributes) != 2 {
+		t.Fatalf("len(Attributes) = %d, want 2", len(ib.Attributes))
+	}
+	if ib.Attributes[0].Key != "Population" || ib.Attributes[0].Value != "8M" {
+		t.Errorf("Attributes[0] = %+v, want {Population 8M}", ib.Attributes[0])
+	}
+	if ib.Attributes[1].Key != "Area" || ib.Attributes[1].Value != "2,000 km²" {
+		t.Errorf("Attributes[1] = %+v, want {Area 2,000 km²}", ib.Attributes[1])
+	}
+
+	if len(ib.URLs) != 2 {
+		t.Fatalf("len(URLs) = %d, want 2", len(ib.URLs))
+	}
+	if ib.URLs[0].Title != "Link 1" || ib.URLs[0].URL != "https://example.com/1" {
+		t.Errorf("URLs[0] = %+v, want {Link 1 https://example.com/1}", ib.URLs[0])
+	}
+	if ib.URLs[1].Title != "Link 2" || ib.URLs[1].URL != "https://example.com/2" {
+		t.Errorf("URLs[1] = %+v, want {Link 2 https://example.com/2}", ib.URLs[1])
+	}
+}
+
 func TestNewSearchVideosHandler(t *testing.T) { //nolint:gocognit
 	t.Parallel()
 
