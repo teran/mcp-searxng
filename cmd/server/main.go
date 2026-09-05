@@ -45,13 +45,15 @@ func main() {
 // error to trigger graceful shutdown. It returns an error only if a listener
 // cannot be bound (fail fast), or on successful shutdown returns nil.
 func Run(cfg config.Config) error {
-	mainLn, err := net.Listen("tcp", cfg.ListenAddr)
+	bindCtx := context.Background()
+
+	mainLn, err := (&net.ListenConfig{}).Listen(bindCtx, "tcp", cfg.ListenAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
 	}
 	defer func() { _ = mainLn.Close() }()
 
-	metricsLn, err := net.Listen("tcp", cfg.PrometheusMetricsAddr)
+	metricsLn, err := (&net.ListenConfig{}).Listen(bindCtx, "tcp", cfg.PrometheusMetricsAddr)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", cfg.PrometheusMetricsAddr, err)
 	}
@@ -201,7 +203,7 @@ func run(ctx context.Context, cfg config.Config, mainLn, metricsLn net.Listener)
 		log.Printf("Server error: %v", err)
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// Stop the rate limiter background eviction goroutine.

@@ -48,7 +48,7 @@ func TestHealthEndpoint(t *testing.T) {
 func mustListen(t *testing.T) net.Listener {
 	t.Helper()
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	l, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to bind listener: %v", err)
 	}
@@ -93,7 +93,7 @@ func waitForServer(t *testing.T, url string, timeout time.Duration) {
 func serverReady(url string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		resp, err := testClient.Get(url) //nolint:noctx,gosec
+		resp, err := testClient.Get(url) //nolint:noctx
 		if err == nil {
 			_ = resp.Body.Close()
 			return true
@@ -391,7 +391,7 @@ func TestRun_Success(t *testing.T) {
 	// context is created, and run serves until a SIGTERM triggers shutdown.
 	// Retries on transient ephemeral-port conflicts (the small free-port-then-
 	// rebind window is harmless here because the assertion tolerates a retry).
-	for attempt := 0; attempt < 5; attempt++ {
+	for range 5 {
 		addr := freePort(t)
 		metricsAddr := freePort(t)
 
