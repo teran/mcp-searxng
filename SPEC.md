@@ -315,6 +315,14 @@ docker buildx build --platform linux/amd64,linux/arm64 \
   -t ghcr.io/teran/mcp-searxng:latest --push .
 ```
 
+### Development Workflow (TDD)
+
+This project follows **test-driven development (TDD)** — tests are written before the implementation:
+
+1. `@qa` writes the tests first in an **isolated context**, confirming they fail (**red**).
+2. `@developer` implements the functionality in an **isolated context**, driving the tests to pass (**green**).
+3. Every fix and feature is done TDD-style: write a failing test, then make it pass.
+
 ### Quality gates (CI pipeline)
 
 Every commit on any branch is checked by:
