@@ -265,6 +265,11 @@ Reads and buffers the request body to parse the JSON-RPC method name, validates 
 - Response bodies from SearXNG are limited to 10 MB via `io.LimitReader`.
 - **Prometheus metrics** are exposed on a separate HTTP server (default `:8081`) with no built-in authentication.
 
+**Security-scanner findings policy (S5):**
+- Findings from security scanners (**gosec**, **govulncheck**) are **fixed, never suppressed**.
+- Only **point (line-level)** `//nolint` directives are permitted, and only when they are accompanied by a justification showing the data is already sanitized (e.g. a value passed through `SanitizeLog()` before being logged). Such findings are confirmed false positives.
+- **Blanket suppression** (e.g. `//nolint` without a linter name, whole-file or whole-package `nolint` directives) is **prohibited**.
+
 ### LLM Security (OWASP Top 10)
 
 **Indirect Prompt Injection (LLM01):**
@@ -328,9 +333,10 @@ This project follows **test-driven development (TDD)** — tests are written bef
 Every commit on any branch is checked by:
 
 1. **golangci-lint** — static analysis with `gosec` enabled.
-2. **go test** — unit tests with coverage profile.
-3. **Coverage gate** — total test coverage must be at least **95%**; the CI fails the build if the total falls below this threshold (checked via `go tool cover` after tests).
-4. **gremlins unleash** — mutation testing (informational, does not block).
+2. **govulncheck** — vulnerability scan of the dependency graph; any finding fails the build and must be fixed (see the S5 policy in Security Considerations).
+3. **go test** — unit tests with coverage profile.
+4. **Coverage gate** — total test coverage must be at least **95%**; the CI fails the build if the total falls below this threshold (checked via `go tool cover` after tests).
+5. **gremlins unleash** — mutation testing (informational, does not block).
 
 ### Linting
 
