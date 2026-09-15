@@ -55,7 +55,9 @@ The MCP server listens on the `/` HTTP path via the Streamable HTTP handler.
 
 ### Tool metadata (Annotations & Instructions)
 
-Every tool is described by MCP `Annotations` (hints) plus per-tool `instructions`. The annotations tell clients how to treat each tool (read-only, idempotent, open-world, non-destructive); the `instructions` are a natural-language guide for the model on how and when to use each tool.
+Every tool is described by MCP `Annotations` (hints) plus a per-tool `Description` that doubles as the natural-language instruction guide for the calling model. The annotations tell clients how to treat each tool (read-only, idempotent, open-world, non-destructive); the `Description` is the natural-language guide for the model on how and when to use each tool.
+
+> Note: the pinned MCP SDK (`go-sdk v1.7.0`) exposes no dedicated per-tool `Instructions` field, so the instruction guide is carried in each tool's `Description`.
 
 | Tool             | Title            | readOnlyHint | destructiveHint | idempotentHint | openWorldHint |
 |------------------|------------------|--------------|-----------------|----------------|---------------|
@@ -73,7 +75,7 @@ All search tools share the same hint profile:
 - `idempotentHint = true` — calling repeatedly with the same arguments has no additional effect.
 - `openWorldHint = true` — the tool interacts with an open world of external entities (the whole web).
 
-**Per-tool `instructions`** (for the calling model):
+**Per-tool `Description` (instruction guide for the calling model, set on each tool):**
 
 - `search` — Use for general web queries when you need current information, definitions, facts, or links. Provide a concise `query`; optionally narrow with `categories`, `language`, `time_range`, `safesearch`, or `max_results`. Prefer this tool unless the user clearly wants news, images, videos, or music.
 - `search_news` — Use when the user wants recent news or time-sensitive current events. Presets `categories=["news"]` and `time_range="day"`; pass a targeted `query` and optional `language`/`max_results`.

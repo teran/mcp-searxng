@@ -177,7 +177,8 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		// Reject batch requests that exceed MaxBatchSize to prevent
 		// amplification attacks.
 		if err := checkBatchSize(body); err != nil {
-			log.Printf("INFO mcp_log http_method=%s path=%s method=%s duration=%v req_size=%d resp_size=%d status=%d", //nolint:gosec
+			// Values are sanitized by SanitizeLog() below, so gosec G104/G203 is a false positive.
+			log.Printf("INFO mcp_log http_method=%s path=%s method=%s duration=%v req_size=%d resp_size=%d status=%d", //nolint:gosec // values sanitized via SanitizeLog()
 				SanitizeLog(r.Method), SanitizeLog(r.URL.Path), mcpMethod, time.Since(start), reqSize, 0, http.StatusBadRequest)
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -192,7 +193,8 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(lrw, r)
 
 		duration := time.Since(start)
-		log.Printf("INFO mcp_log http_method=%s path=%s method=%s duration=%v req_size=%d resp_size=%d status=%d", //nolint:gosec
+		// Values are sanitized by SanitizeLog() below, so gosec G104/G203 is a false positive.
+		log.Printf("INFO mcp_log http_method=%s path=%s method=%s duration=%v req_size=%d resp_size=%d status=%d", //nolint:gosec // values sanitized via SanitizeLog()
 			SanitizeLog(r.Method), SanitizeLog(r.URL.Path), mcpMethod, duration, reqSize, lrw.bodySize, lrw.statusCode)
 	})
 }
