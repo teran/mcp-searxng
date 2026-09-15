@@ -21,31 +21,31 @@ func ToolDefinitions() []*mcp.Tool {
 		{
 			Name:        "search",
 			Title:       "Search the web",
-			Description: "Search the web using SearXNG. Returns search results, answers, suggestions, and infoboxes.",
+			Description: "Search the web using SearXNG. Returns search results, answers, suggestions, and infoboxes. Use for general web queries when you need current information, definitions, facts, or links. Provide a concise query; optionally narrow with categories, language, time_range, safesearch, or max_results. Prefer this tool unless the user clearly wants news, images, videos, or music.",
 			Annotations: toolAnnotations(),
 		},
 		{
 			Name:        "search_news",
 			Title:       "Search news",
-			Description: "Search news using SearXNG. Convenience wrapper around search with categories=[news], time_range=day.",
+			Description: "Search news using SearXNG. Convenience wrapper around search with categories=[news], time_range=day. Use when the user wants recent news or time-sensitive current events. Pass a targeted query and optional language/max_results.",
 			Annotations: toolAnnotations(),
 		},
 		{
 			Name:        "search_images",
 			Title:       "Search images",
-			Description: "Search images using SearXNG. Convenience wrapper around search with categories=[images].",
+			Description: "Search images using SearXNG. Convenience wrapper around search with categories=[images]. Use when the user wants pictures, photos, or visual content. Pass a descriptive query and optional language/max_results.",
 			Annotations: toolAnnotations(),
 		},
 		{
 			Name:        "search_videos",
 			Title:       "Search videos",
-			Description: "Search videos using SearXNG. Convenience wrapper around search with categories=[videos].",
+			Description: "Search videos using SearXNG. Convenience wrapper around search with categories=[videos]. Use when the user wants video content or clips. Pass a descriptive query and optional language/max_results.",
 			Annotations: toolAnnotations(),
 		},
 		{
 			Name:        "search_music",
 			Title:       "Search music",
-			Description: "Search music using SearXNG. Convenience wrapper around search with categories=[music].",
+			Description: "Search music using SearXNG. Convenience wrapper around search with categories=[music]. Use when the user wants songs, artists, albums, or audio content. Pass a descriptive query and optional language/max_results.",
 			Annotations: toolAnnotations(),
 		},
 	}
