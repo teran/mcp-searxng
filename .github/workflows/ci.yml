@@ -21,6 +21,12 @@ jobs:
           cache: true
 
       # Lint + gosec (via golangci-lint) + govulncheck — findings must be FIXED.
+      - name: Install linters
+        run: |
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
       - name: Lint
         run: make lint
 
