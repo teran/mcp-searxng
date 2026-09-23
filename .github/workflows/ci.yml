@@ -20,37 +20,29 @@ jobs:
           go-version: "1.26"
           cache: true
 
-      - name: golangci-lint
+      # Lint + gosec via the official golangci-lint action (findings must be
+      # FIXED). Pinned to the local toolchain version (v2.13.2) so the v2 config
+      # schema cannot drift between CI and local runs.
+      - name: Lint (golangci-lint)
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.13.2
           args: --config .golangci.yml
 
+      # govulncheck — dependency-graph vulnerability scan; findings must be FIXED.
       - name: govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
-      - name: Run tests
-        run: go test -race -coverprofile=coverage.out -count=1 ./...
-
-      - name: Check coverage threshold
-        run: |
-          COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | sed 's/%//')
-          echo "### Coverage: ${COVERAGE}% (threshold: 95%)" >> "$GITHUB_STEP_SUMMARY"
-          echo "Coverage: ${COVERAGE}%"
-          THRESHOLD=95
-          if awk "BEGIN {exit !($COVERAGE < $THRESHOLD)}"; then
-            echo "❌ Coverage ${COVERAGE}% is below threshold of ${THRESHOLD}%"
-            echo "❌ Coverage ${COVERAGE}% is below threshold of ${THRESHOLD}%" >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          echo "✅ Coverage ${COVERAGE}% meets threshold of ${THRESHOLD}%"
+      # Unit tests with the race detector + >= 95% coverage gate (C01/C04GO).
+      - name: Test
+        run: make test
 
       - name: Upload coverage profile
         uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage
-          path: coverage.out
+          path: cover.out
           retention-days: 7
