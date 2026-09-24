@@ -1,6 +1,6 @@
 module github.com/teran/mcp-searxng
 
-go 1.26.4
+go 1.27.1
 
 require (
 	github.com/go-ozzo/ozzo-validation/v4 v4.4.1

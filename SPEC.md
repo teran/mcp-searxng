@@ -57,7 +57,7 @@ The MCP server listens on the `/` HTTP path via the Streamable HTTP handler.
 
 Every tool is described by MCP `Annotations` (hints) plus a per-tool `Description` that doubles as the natural-language instruction guide for the calling model. The annotations tell clients how to treat each tool (read-only, idempotent, open-world, non-destructive); the `Description` is the natural-language guide for the model on how and when to use each tool.
 
-> Note: the pinned MCP SDK (`go-sdk v1.7.0`) exposes no dedicated per-tool `Instructions` field, so the instruction guide is carried in each tool's `Description`.
+> Note: the pinned MCP SDK (`go-sdk v1.8.0`) exposes no dedicated per-tool `Instructions` field, so the instruction guide is carried in each tool's `Description`.
 
 | Tool             | Title            | readOnlyHint | destructiveHint | idempotentHint | openWorldHint |
 |------------------|------------------|--------------|-----------------|----------------|---------------|
@@ -303,7 +303,7 @@ Reads and buffers the request body to parse the JSON-RPC method name, validates 
 
 ### Prerequisites
 
-- Go 1.26+
+- Go 1.27+
 - golangci-lint (for linting)
 - goreleaser (for building/releasing)
 - gremlins (for mutation testing, optional)
@@ -383,5 +383,5 @@ gremlins unleash handlers application infrastructure/searxng config
 
 Dependencies are updated automatically via [Dependabot](https://docs.github.com/code-security/dependabot) (`.github/dependabot.yml`):
 - Go module dependencies — checked weekly
-- Docker base image (`golang:1.26-alpine`) — checked weekly
+- Dockerfile base stages (`alpine:latest` as the CA-certificate source; the final image is `FROM scratch`, built from the goreleaser binary — no Go runtime in the image) — checked weekly
 - GitHub Actions — checked weekly
