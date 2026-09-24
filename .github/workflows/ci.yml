@@ -35,6 +35,12 @@ jobs:
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
 
+      # go-arch-lint — enforce DDD/Clean layer edges (C07GO).
+      - name: go-arch-lint
+        run: |
+          go install github.com/fe3dback/go-arch-lint@latest
+          go-arch-lint check
+
       # Unit tests with the race detector + >= 95% coverage gate (C01/C04GO).
       - name: Test
         run: make test

@@ -1,0 +1,93 @@
+# go-arch-lint dependency rules (C07GO) for mcp-searxng.
+# Docs: https://github.com/fe3dback/go-arch-lint
+#
+# The Go layout is ALWAYS layered (DDD/Clean, A01): cmd/ + domain/ +
+# application/ + infrastructure/. Top-level named packages are the DEFAULT
+# (no `internal/` wrapper is used). These rules encode the layer edges.
+#
+# Actual package layout and dependency edges:
+#   cmd/server (composition root) -> application, config, handlers, infrastructure
+#   handlers (HTTP/MCP layer)     -> application, domain
+#   application (use cases)       -> domain
+#   infrastructure/searxng        -> domain (implements domain ports)
+#   domain                        -> (nothing; innermost)
+#   config                        -> (nothing internal)
+#
+# Every other edge (e.g. application -> infrastructure, domain -> application,
+# handlers -> infrastructure) is forbidden.
+#
+# Run locally:  go-arch-lint check
+# Run in CI:    via `make lint` / a dedicated CI job (C07GO)
+
+version: 3
+
+# Global scheme options. deepScan (AST method-call/injection tracing) is on by
+# default in v3+ and flags the legitimate dependency-injection wiring in the
+# composition root (cmd injects the infrastructure adapter into the application
+# service through a domain port). The base import linter already enforces the
+# layer edges (infrastructure imports only domain), so disable deepScan.
+allow:
+  deepScan: false
+
+components:
+  cmd:
+    in: cmd/**
+  handlers:
+    in: handlers
+  application:
+    in: application
+  infrastructure:
+    in: infrastructure/**
+  domain:
+    in: domain
+  config:
+    in: config
+
+deps:
+  # cmd is the composition root; it wires application + infrastructure +
+  # handlers + config.
+  cmd:
+    mayDependOn:
+      - application
+      - infrastructure
+      - handlers
+      - config
+    anyVendorDeps: true
+
+  # handlers is the HTTP/MCP presentation layer; uses application + domain.
+  handlers:
+    mayDependOn:
+      - application
+      - domain
+    anyVendorDeps: true
+
+  # application uses domain.
+  application:
+    mayDependOn:
+      - domain
+    anyVendorDeps: true
+
+  # infrastructure implements domain ports.
+  infrastructure:
+    mayDependOn:
+      - domain
+    anyVendorDeps: true
+
+  # domain is the innermost layer — no outward internal deps (stdlib only).
+  domain:
+    anyVendorDeps: true
+
+  # config is a leaf — no internal deps (uses envconfig/ozzo-validation).
+  config:
+    anyVendorDeps: true
+
+# Directories excluded from dependency analysis (generated code, vendored deps).
+exclude:
+  - ./vendor
+  - ./generated
+
+# Test files are excluded from architecture analysis (a package's external
+# test file legitimately imports the package under test).
+excludeFiles:
+  - "_test.go$"
+
