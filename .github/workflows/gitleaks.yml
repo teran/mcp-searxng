@@ -1,0 +1,25 @@
+name: gitleaks
+
+# Secret scan over git history (C03/N28): catches secrets accidentally
+# committed, on PRs and on pushes to master. Findings must be FIXED, not
+# suppressed (S05). Runs with fetch-depth: 0 so the full history is scanned.
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  gitleaks:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
