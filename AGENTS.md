@@ -66,7 +66,7 @@ Every commit on any branch is checked by:
 2. **govulncheck** — vulnerability scan of the dependency graph; any finding fails the build and must be fixed (see the S5 policy in Security Considerations).
 3. **go test** — unit tests with coverage profile (uploaded as artifact).
 4. **Coverage gate** — total test coverage must be at least **95%** (checked via `go tool cover` after tests).
-5. **gremlins unleash** — mutation testing on packages with highest coverage (`handlers`, `application`, `infrastructure/searxng`, `config`). Runs as `continue-on-error` — informational only, does not block the PR.
+5. **gremlins unleash** — mutation testing on packages with highest coverage (`handlers`, `application`, `infrastructure/searxng`, `config`). Runs as a **hard gate** — the build fails if mutation efficacy or mutant coverage drop below **80%** (C02/C08GO).
 
 Workflow files:
 - `.github/workflows/ci.yml` — lint + govulncheck + test + coverage upload + coverage gate

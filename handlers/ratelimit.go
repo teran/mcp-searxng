@@ -31,10 +31,21 @@ type RateLimiterConfig struct {
 }
 
 // cleanupInterval is how often the stale-client eviction goroutine runs.
-const cleanupInterval = 10 * time.Minute
+// The arithmetic lives in a covered function (not an inlined package-var
+// initializer, which Go coverage does not instrument) so the mutation tester
+// can exercise it.
+var cleanupInterval = defaultCleanupInterval()
 
 // clientTTL is how long a client limiter is kept after its last request.
-const clientTTL = 30 * time.Minute
+var clientTTL = defaultClientTTL()
+
+// defaultCleanupInterval returns how often the stale-client eviction goroutine
+// runs. Kept as a function so its arithmetic expression is covered.
+func defaultCleanupInterval() time.Duration { return 10 * time.Minute }
+
+// defaultClientTTL returns how long a client limiter is kept after its last
+// request. Kept as a function so its arithmetic expression is covered.
+func defaultClientTTL() time.Duration { return 30 * time.Minute }
 
 // rateLimiter implements token-bucket rate limiting with a global limiter
 // and per-client limiters tracked by IP address. Stale client entries are

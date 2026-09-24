@@ -1,24 +1,55 @@
 name: gremlins
 
+# Mutation testing (C02/C08GO) as a HARD gate: the build FAILS when mutation
+# efficacy or mutant coverage drop below 80/80. gremlins accepts a single
+# package argument, so run it once per target package (each must meet 80/80).
+# --workers 1 --timeout-coefficient 10 keep the run deterministic (the default
+# parallel workers oversubscribe the CPU and cause mass per-mutation timeouts).
 on:
   pull_request:
 
 jobs:
   gremlins:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version: "stable"
           cache: true
-      - uses: go-gremlins/gremlins-action@v1
-        continue-on-error: true
+
+      - name: gremlins handlers
+        uses: go-gremlins/gremlins-action@v1
         with:
           version: latest
           args: >-
-            --threshold-efficacy=0
-            --threshold-mcover=0
-            handlers application infrastructure/searxng config
-          workdir: .
+            --threshold-efficacy=80 --threshold-mcover=80
+            --workers 1 --timeout-coefficient 10
+            handlers
+
+      - name: gremlins application
+        uses: go-gremlins/gremlins-action@v1
+        with:
+          version: latest
+          args: >-
+            --threshold-efficacy=80 --threshold-mcover=80
+            --workers 1 --timeout-coefficient 10
+            application
+
+      - name: gremlins infrastructure/searxng
+        uses: go-gremlins/gremlins-action@v1
+        with:
+          version: latest
+          args: >-
+            --threshold-efficacy=80 --threshold-mcover=80
+            --workers 1 --timeout-coefficient 10
+            infrastructure/searxng
+
+      - name: gremlins config
+        uses: go-gremlins/gremlins-action@v1
+        with:
+          version: latest
+          args: >-
+            --threshold-efficacy=80 --threshold-mcover=80
+            --workers 1 --timeout-coefficient 10
+            config
