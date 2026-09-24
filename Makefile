@@ -95,12 +95,13 @@ test:
 e2e:
 	go test -tags e2e ./...
 
-## Linters. gosec runs inside golangci-lint. go-arch-lint is added once the
-## .go-arch-lint.yml rules land (C07GO). Findings must be FIXED (C05GO/C06GO).
+## Linters. gosec runs inside golangci-lint. go-arch-lint enforces the
+## DDD/Clean layer edges (C07GO). Findings must be FIXED (C05GO/C06GO).
 lint:
 	golangci-lint run ./...
 	go vet ./...
 	govulncheck ./...
+	go-arch-lint check
 
 ## Optional — gofmt formatting check.
 fmt:
