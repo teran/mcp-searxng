@@ -338,7 +338,7 @@ Every commit on any branch is checked by:
 2. **govulncheck** — vulnerability scan of the dependency graph; any finding fails the build and must be fixed (see the S5 policy in Security Considerations).
 3. **go test** — unit tests with coverage profile.
 4. **Coverage gate** — total test coverage must be at least **95%**; the CI fails the build if the total falls below this threshold (checked via `go tool cover` after tests).
-5. **gremlins unleash** — mutation testing (informational, does not block).
+5. **gremlins unleash** — mutation testing as a **hard gate**: the build fails if mutation efficacy or mutant coverage drop below **80%** (C02/C08GO).
 
 ### Linting
 

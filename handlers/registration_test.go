@@ -74,3 +74,23 @@ func TestRegisterTools(t *testing.T) {
 		}
 	})
 }
+
+func TestRegisterTools_PanicUnknownTool(t *testing.T) {
+	t.Parallel()
+
+	srv := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
+
+	defer func() {
+		r := recover()
+		if r == nil {
+			t.Fatal("expected panic for unknown tool, got none")
+		}
+		// Assert the exact message so mutating the concat is caught by the
+		// mutation tester.
+		if r != "unhandled tool in RegisterTools: bogus" {
+			t.Errorf("panic = %v, want %q", r, "unhandled tool in RegisterTools: bogus")
+		}
+	}()
+
+	registerTool(srv, &mcp.Tool{Name: "bogus"}, nil, nil)
+}

@@ -274,3 +274,23 @@ func TestRateLimiterDefaultBurst(t *testing.T) {
 		}
 	})
 }
+
+func TestRateLimitTuningConstants(t *testing.T) {
+	t.Parallel()
+
+	// Call the default functions directly so the mutation tester covers their
+	// arithmetic expressions and pins the exact values (killing any mutation).
+	if got := defaultCleanupInterval(); got != 10*time.Minute {
+		t.Errorf("defaultCleanupInterval() = %v, want %v", got, 10*time.Minute)
+	}
+	if got := defaultClientTTL(); got != 30*time.Minute {
+		t.Errorf("defaultClientTTL() = %v, want %v", got, 30*time.Minute)
+	}
+	// The package vars must be derived from the defaults.
+	if cleanupInterval != defaultCleanupInterval() {
+		t.Errorf("cleanupInterval = %v, want %v", cleanupInterval, defaultCleanupInterval())
+	}
+	if clientTTL != defaultClientTTL() {
+		t.Errorf("clientTTL = %v, want %v", clientTTL, defaultClientTTL())
+	}
+}

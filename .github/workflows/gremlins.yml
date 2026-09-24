@@ -1,12 +1,14 @@
 name: gremlins
 
+# Mutation testing (C02/C08GO) as a HARD gate: the build FAILS when mutation
+# efficacy or mutant coverage drop below 80/80. The action runs gremlins once
+# per target package, each of which must meet the thresholds.
 on:
   pull_request:
 
 jobs:
   gremlins:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -14,11 +16,12 @@ jobs:
           go-version: "stable"
           cache: true
       - uses: go-gremlins/gremlins-action@v1
-        continue-on-error: true
         with:
           version: latest
           args: >-
-            --threshold-efficacy=0
-            --threshold-mcover=0
+            --threshold-efficacy=80
+            --threshold-mcover=80
+            --workers 1
+            --timeout-coefficient 10
             handlers application infrastructure/searxng config
           workdir: .
