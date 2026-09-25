@@ -1,13 +1,13 @@
 package handlers
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
 )
 
@@ -144,14 +144,17 @@ func (rl *rateLimiter) evictStaleClients() {
 // Returns 429 Too Many Requests when the limit is exceeded.
 // The returned stop function terminates the background eviction goroutine;
 // callers must invoke it during shutdown to prevent goroutine leaks.
-func RateLimitMiddleware(cfg RateLimiterConfig) (func(http.Handler) http.Handler, func()) {
+func RateLimitMiddleware(cfg RateLimiterConfig, logger *logrus.Logger) (func(http.Handler) http.Handler, func()) {
 	rl := NewRateLimiter(cfg)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			clientIP := extractClientIP(r)
 			if !rl.Allow(clientIP) {
-				log.Printf("WARN rate_limit exceeded client_ip=%s method=%s", SanitizeLog(clientIP), SanitizeLog(r.Method)) //nolint:gosec // value is sanitized by SanitizeLog()
+				logger.WithFields(logrus.Fields{
+					"client_ip":   SanitizeLog(clientIP),
+					"http_method": SanitizeLog(r.Method),
+				}).Warn("rate_limit exceeded")
 				http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
 				return
 			}

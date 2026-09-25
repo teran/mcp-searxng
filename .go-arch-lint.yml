@@ -42,6 +42,8 @@ components:
     in: domain
   config:
     in: config
+  logging:
+    in: logging
 
 deps:
   # cmd is the composition root; it wires application + infrastructure +
@@ -52,6 +54,7 @@ deps:
       - infrastructure
       - handlers
       - config
+      - logging
     anyVendorDeps: true
 
   # handlers is the HTTP/MCP presentation layer; uses application + domain.
@@ -79,6 +82,12 @@ deps:
 
   # config is a leaf — no internal deps (uses envconfig/ozzo-validation).
   config:
+    mayDependOn:
+      - logging
+    anyVendorDeps: true
+
+  # logging is a leaf utility — no internal deps (uses logrus/stdlib).
+  logging:
     anyVendorDeps: true
 
 # Directories excluded from dependency analysis (generated code, vendored deps).

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -14,12 +13,14 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
 
 	"github.com/teran/mcp-searxng/application"
 	"github.com/teran/mcp-searxng/config"
 	"github.com/teran/mcp-searxng/handlers"
 	infra "github.com/teran/mcp-searxng/infrastructure/searxng"
+	"github.com/teran/mcp-searxng/logging"
 )
 
 // Build-time variables injected by goreleaser (via ldflags).
@@ -32,11 +33,19 @@ var (
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		// Logger is not configured yet — use logrus defaults.
+		logrus.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	if err := Run(*cfg); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	logger, err := logging.New(cfg.LogLevel, cfg.LogFormat, cfg.LogFilename)
+	if err != nil {
+		// Logger failed to initialize (e.g. cannot open LOG_FILENAME) — use
+		// logrus defaults since we have no usable logger.
+		logrus.Fatalf("Failed to configure logger: %v", err)
+	}
+
+	if err := Run(*cfg, logger); err != nil {
+		logger.Fatalf("Failed to start server: %v", err)
 	}
 }
 
@@ -44,7 +53,7 @@ func main() {
 // server, metrics server, waiting for a signal (SIGTERM/SIGINT) or server
 // error to trigger graceful shutdown. It returns an error only if a listener
 // cannot be bound (fail fast), or on successful shutdown returns nil.
-func Run(cfg config.Config) error {
+func Run(cfg config.Config, logger *logrus.Logger) error {
 	bindCtx := context.Background()
 
 	mainLn, err := (&net.ListenConfig{}).Listen(bindCtx, "tcp", cfg.ListenAddr)
@@ -65,7 +74,7 @@ func Run(cfg config.Config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	return run(ctx, cfg, mainLn, metricsLn)
+	return run(ctx, cfg, logger, mainLn, metricsLn)
 }
 
 // run starts the MCP HTTP server and metrics server on the provided
@@ -76,7 +85,7 @@ func Run(cfg config.Config) error {
 // eliminates the free-port-then-rebind TOCTOU race in tests: the caller binds
 // a listener exactly once and hands ownership to the server. Using ctx (rather
 // than a raw OS signal) makes shutdown deterministic and testable.
-func run(ctx context.Context, cfg config.Config, mainLn, metricsLn net.Listener) error {
+func run(ctx context.Context, cfg config.Config, logger *logrus.Logger, mainLn, metricsLn net.Listener) error {
 	// sharedHTTPClient is reused across requests for connection pooling.
 	// CheckRedirect is set to http.ErrUseLastResponse to prevent credential
 	// forwarding — the http.Client never follows redirects.
@@ -112,7 +121,7 @@ func run(ctx context.Context, cfg config.Config, mainLn, metricsLn net.Listener)
 	metrics := handlers.NewMetrics(promRegistry)
 
 	// Register tools via handler factories (service injected explicitly — no context lookup).
-	handlers.RegisterTools(srv, metrics, searchSvc)
+	handlers.RegisterTools(srv, metrics, logger, searchSvc)
 
 	// Create the Streamable HTTP handler.
 	mcpHandler := mcp.NewStreamableHTTPHandler(
@@ -131,12 +140,12 @@ func run(ctx context.Context, cfg config.Config, mainLn, metricsLn net.Listener)
 		GlobalBurst:    cfg.RateLimitGlobal * 2,
 		PerClientLimit: rate.Limit(cfg.RateLimitPerClient),
 		PerClientBurst: cfg.RateLimitPerClient * 2,
-	})
-	handler := handlers.RecoveryMiddleware(
+	}, logger)
+	handler := handlers.RecoveryMiddleware(logger,
 		handlers.MetricsMiddleware(metrics)(
 			rateLimitMW(
 				handlers.BodyLimitMiddleware(handlers.DefaultMaxRequestBodySize)(
-					handlers.LoggingMiddleware(mcpHandler),
+					handlers.LoggingMiddleware(logger, mcpHandler),
 				),
 			),
 		),
@@ -152,8 +161,8 @@ func run(ctx context.Context, cfg config.Config, mainLn, metricsLn net.Listener)
 	mux.Handle("/", handler)
 
 	u, _ := url.Parse(cfg.SearXNGURL)
-	log.Printf("SearXNG URL: %s", handlers.SanitizeLog(u.Redacted()))
-	log.Printf("Version: %s, commit: %s, built: %s", version, commit, date)
+	logger.Infof("SearXNG URL: %s", handlers.SanitizeLog(u.Redacted()))
+	logger.Infof("Version: %s, commit: %s, built: %s", version, commit, date)
 
 	// ---- Main MCP HTTP server ----
 	mainServer := &http.Server{
@@ -182,14 +191,14 @@ func run(ctx context.Context, cfg config.Config, mainLn, metricsLn net.Listener)
 	errCh := make(chan error, 2)
 
 	go func() {
-		log.Printf("Starting mcp-searxng server on %s", handlers.SanitizeLog(mainLn.Addr().String()))
+		logger.Infof("Starting mcp-searxng server on %s", handlers.SanitizeLog(mainLn.Addr().String()))
 		if err := mainServer.Serve(mainLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 	}()
 
 	go func() {
-		log.Printf("Starting Prometheus metrics server on %s", handlers.SanitizeLog(metricsLn.Addr().String()))
+		logger.Infof("Starting Prometheus metrics server on %s", handlers.SanitizeLog(metricsLn.Addr().String()))
 		if err := metricsServer.Serve(metricsLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -198,9 +207,9 @@ func run(ctx context.Context, cfg config.Config, mainLn, metricsLn net.Listener)
 	// Wait for ctx cancellation (shutdown signal) or a server error.
 	select {
 	case <-ctx.Done():
-		log.Printf("Received shutdown signal, shutting down...")
+		logger.Info("Received shutdown signal, shutting down...")
 	case err := <-errCh:
-		log.Printf("Server error: %v", err)
+		logger.Errorf("Server error: %v", err)
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -211,12 +220,12 @@ func run(ctx context.Context, cfg config.Config, mainLn, metricsLn net.Listener)
 
 	// Shut down both servers in order.
 	if err := mainServer.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Main server shutdown error: %v", err)
+		logger.Errorf("Main server shutdown error: %v", err)
 	}
 	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Metrics server shutdown error: %v", err)
+		logger.Errorf("Metrics server shutdown error: %v", err)
 	}
 
-	log.Println("Server stopped gracefully")
+	logger.Info("Server stopped gracefully")
 	return nil
 }

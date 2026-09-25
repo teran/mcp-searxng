@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,7 +10,17 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
+
+// testLogger returns a logrus logger that discards output, for exercising
+// middleware that requires a logger without polluting test output.
+func testLogger() *logrus.Logger {
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	return logger
+}
 
 func TestSanitizeLog(t *testing.T) {
 	t.Parallel()
@@ -47,7 +58,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	t.Parallel()
 
 	t.Run("panicking handler recovers and returns 500", func(t *testing.T) {
-		handler := RecoveryMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := RecoveryMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			panic("test panic")
 		}))
 
@@ -61,7 +72,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	})
 
 	t.Run("normal handler passes through", func(t *testing.T) {
-		handler := RecoveryMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := RecoveryMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -192,7 +203,7 @@ func TestLoggingMiddleware(t *testing.T) {
 	t.Parallel()
 
 	t.Run("logs request and passes through", func(t *testing.T) {
-		handler := LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := LoggingMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0"}`))
 		}))
@@ -214,7 +225,7 @@ func TestLoggingMiddleware(t *testing.T) {
 		}
 		body, _ := json.Marshal(batch)
 
-		handler := LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := LoggingMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Error("next handler should not be called for oversized batch")
 		}))
 
@@ -280,7 +291,7 @@ func TestLoggingMiddleware_BodyLimitReadError(t *testing.T) {
 		// BodyLimitMiddleware wraps the body with MaxBytesReader; when the
 		// LoggingMiddleware tries to read a body larger than the limit,
 		// io.ReadAll returns an error and the middleware responds 413.
-		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Error("next handler should not be called when body read fails")
 		})))
 
@@ -296,7 +307,7 @@ func TestLoggingMiddleware_BodyLimitReadError(t *testing.T) {
 
 	t.Run("body within limit passes through", func(t *testing.T) {
 		called := false
-		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			called = true
 			w.WriteHeader(http.StatusOK)
 		})))
@@ -312,6 +323,56 @@ func TestLoggingMiddleware_BodyLimitReadError(t *testing.T) {
 			t.Errorf("expected 200, got %d", rr.Code)
 		}
 	})
+}
+
+func TestLoggingMiddleware_StructuredFields(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&logrus.JSONFormatter{})
+
+	handler := LoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0"}`))
+	}))
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", strings.NewReader(`{"method":"ping"}`))
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rr.Code)
+	}
+
+	line := strings.TrimSpace(buf.String())
+	if line == "" {
+		t.Fatal("expected a log line, got none")
+	}
+
+	var entry map[string]any
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		t.Fatalf("log output is not valid JSON: %v\nraw: %s", err, line)
+	}
+
+	for _, key := range []string{"http_method", "path", "method", "duration", "req_size", "resp_size", "status"} {
+		if _, ok := entry[key]; !ok {
+			t.Errorf("log entry missing key %q: %v", key, entry)
+		}
+	}
+	if entry["http_method"] != "POST" {
+		t.Errorf("http_method = %v, want POST", entry["http_method"])
+	}
+	if entry["path"] != "/mcp" {
+		t.Errorf("path = %v, want /mcp", entry["path"])
+	}
+	if entry["method"] != "ping" {
+		t.Errorf("method = %v, want ping", entry["method"])
+	}
+	if entry["status"] != float64(http.StatusOK) {
+		t.Errorf("status = %v, want %d", entry["status"], http.StatusOK)
+	}
 }
 
 func TestLoggingResponseWriter(t *testing.T) {

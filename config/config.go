@@ -9,6 +9,8 @@ import (
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/kelseyhightower/envconfig"
+
+	"github.com/teran/mcp-searxng/logging"
 )
 
 // Config represents the application configuration loaded from environment variables.
@@ -19,6 +21,9 @@ type Config struct {
 	RateLimitGlobal       int           `envconfig:"RATE_LIMIT_GLOBAL" default:"100"`
 	RateLimitPerClient    int           `envconfig:"RATE_LIMIT_PER_CLIENT" default:"10"`
 	WriteTimeout          time.Duration `envconfig:"WRITE_TIMEOUT" default:"60s"`
+	LogLevel              string        `envconfig:"LOG_LEVEL" default:"info"`
+	LogFormat             string        `envconfig:"LOG_FORMAT" default:"text"`
+	LogFilename           string        `envconfig:"LOG_FILENAME" default:""`
 }
 
 // validate performs semantic validation on the loaded configuration.
@@ -32,7 +37,31 @@ func (c Config) validate() error {
 		validation.Field(&c.RateLimitGlobal, validation.By(validatePositiveInt)),
 		validation.Field(&c.RateLimitPerClient, validation.By(validatePositiveInt)),
 		validation.Field(&c.WriteTimeout, validation.Min(time.Duration(0))),
+		validation.Field(&c.LogLevel, validation.By(validateLogLevel)),
+		validation.Field(&c.LogFormat, validation.By(validateLogFormat)),
 	)
+}
+
+func validateLogLevel(value interface{}) error {
+	s, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("must be a string")
+	}
+	if _, err := logging.ParseLevel(s); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateLogFormat(value interface{}) error {
+	s, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("must be a string")
+	}
+	if _, err := logging.ParseFormat(s); err != nil {
+		return err
+	}
+	return nil
 }
 
 func validatePositiveInt(value interface{}) error {

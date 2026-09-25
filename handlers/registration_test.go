@@ -30,7 +30,7 @@ func TestRegisterTools(t *testing.T) {
 		srv := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 
 		// Should not panic.
-		RegisterTools(srv, nil, nil)
+		RegisterTools(srv, nil, testLogger(), nil)
 	})
 
 	t.Run("registers search tool with metrics", func(t *testing.T) {
@@ -39,7 +39,7 @@ func TestRegisterTools(t *testing.T) {
 		srv := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 
 		// Should not panic.
-		RegisterTools(srv, m, nil)
+		RegisterTools(srv, m, testLogger(), nil)
 	})
 
 	t.Run("handler works with explicit service", func(t *testing.T) {
@@ -55,7 +55,7 @@ func TestRegisterTools(t *testing.T) {
 		svc := newMockService(repo)
 
 		// Pass the service directly to the handler — no context lookup needed.
-		handler := NewSearchHandler(svc)
+		handler := NewSearchHandler(testLogger(), svc)
 
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, SearchInput{
 			Query: "test query",
@@ -92,5 +92,5 @@ func TestRegisterTools_PanicUnknownTool(t *testing.T) {
 		}
 	}()
 
-	registerTool(srv, &mcp.Tool{Name: "bogus"}, nil, nil)
+	registerTool(srv, &mcp.Tool{Name: "bogus"}, nil, testLogger(), nil)
 }
