@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"resty.dev/v3"
+
 	"github.com/teran/mcp-searxng/domain"
 	infra "github.com/teran/mcp-searxng/infrastructure/searxng"
 )
@@ -18,7 +20,7 @@ import (
 func newTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *infra.Client) {
 	t.Helper()
 	srv := httptest.NewServer(handler)
-	client := infra.NewClient(srv.URL, &http.Client{})
+	client := infra.NewClient(srv.URL, resty.New())
 	return srv, client
 }
 
@@ -401,9 +403,9 @@ func TestClient_Search_NetworkErrors(t *testing.T) {
 
 	t.Run("network error / timeout", func(t *testing.T) {
 		expectedErr := errors.New("connection refused")
-		brokenClient := infra.NewClient("http://127.0.0.1:1", &http.Client{
+		brokenClient := infra.NewClient("http://127.0.0.1:1", resty.NewWithClient(&http.Client{
 			Transport: errTransport{err: expectedErr},
-		})
+		}))
 
 		_, err := brokenClient.Search(context.Background(), domain.SearchParams{Query: "test"})
 		if err == nil {

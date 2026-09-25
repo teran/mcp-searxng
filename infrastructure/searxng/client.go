@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 
+	"resty.dev/v3"
+
 	"github.com/teran/mcp-searxng/domain"
 )
 
@@ -18,17 +20,19 @@ var ErrAPIClient = errors.New("API error")
 
 // Client is the SearXNG HTTP client implementing domain.SearchRepository.
 type Client struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL string
+	client  *resty.Client
 }
 
-// NewClient creates a new SearXNG API client with the given HTTP client.
-// The caller should provide an *http.Client with CheckRedirect set to prevent
-// credential forwarding, and a shared Transport for connection reuse.
-func NewClient(baseURL string, httpClient *http.Client) *Client {
+// NewClient creates a new SearXNG API client with the given resty client.
+// The caller should configure the resty client (base URL, timeout, redirect
+// policy, transport) before passing it in. Resty performs no retries by
+// default, so outbound errors are returned to the model rather than silently
+// retried.
+func NewClient(baseURL string, client *resty.Client) *Client {
 	return &Client{
-		baseURL:    baseURL,
-		httpClient: httpClient,
+		baseURL: baseURL,
+		client:  client,
 	}
 }
 
@@ -58,18 +62,18 @@ func (c *Client) doRequest(ctx context.Context, path string, query url.Values) (
 		return nil, fmt.Errorf("build URL: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
+	req := c.client.R().
+		SetContext(ctx).
+		SetHeader("Accept", "application/json").
+		// Do not let resty buffer the whole response; we read the raw stream
+		// below under a 10 MB cap to prevent memory exhaustion.
+		SetResponseDoNotParse(true)
 
 	if query != nil {
-		req.URL.RawQuery = query.Encode()
+		req = req.SetQueryParamsFromValues(query)
 	}
 
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := req.Get(u)
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
@@ -83,9 +87,9 @@ func (c *Client) doRequest(ctx context.Context, path string, query url.Values) (
 		return nil, fmt.Errorf("read response body: %w", err)
 	}
 
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		detail := extractErrorDetail(body, resp.StatusCode)
-		return nil, fmt.Errorf("API status=%d: %s: %w", resp.StatusCode, detail, ErrAPIClient)
+	if resp.StatusCode() < 200 || resp.StatusCode() >= 300 {
+		detail := extractErrorDetail(body, resp.StatusCode())
+		return nil, fmt.Errorf("API status=%d: %s: %w", resp.StatusCode(), detail, ErrAPIClient)
 	}
 
 	return body, nil

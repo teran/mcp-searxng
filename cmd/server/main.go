@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/time/rate"
+	"resty.dev/v3"
 
 	"github.com/teran/mcp-searxng/application"
 	"github.com/teran/mcp-searxng/config"
@@ -86,24 +87,21 @@ func Run(cfg config.Config, logger *logrus.Logger) error {
 // a listener exactly once and hands ownership to the server. Using ctx (rather
 // than a raw OS signal) makes shutdown deterministic and testable.
 func run(ctx context.Context, cfg config.Config, logger *logrus.Logger, mainLn, metricsLn net.Listener) error {
-	// sharedHTTPClient is reused across requests for connection pooling.
-	// CheckRedirect is set to http.ErrUseLastResponse to prevent credential
-	// forwarding — the http.Client never follows redirects.
-	sharedHTTPClient := &http.Client{
-		Timeout: 30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-		Transport: &http.Transport{
-			MaxIdleConns:       10,
-			IdleConnTimeout:    90 * time.Second,
-			DisableCompression: false,
-			DisableKeepAlives:  false,
-		},
-	}
+	// sharedRestyClient is reused across requests for connection pooling.
+	// RedirectNoPolicy disables redirects to prevent credential forwarding (the
+	// resty client never follows redirects), and the explicit 30s timeout bounds
+	// each outbound call. Resty performs no retries by default, so outbound
+	// errors are returned to the model rather than silently retried.
+	sharedRestyClient := resty.NewWithTransportSettings(&resty.TransportSettings{
+		MaxIdleConns:    10,
+		IdleConnTimeout: 90 * time.Second,
+	}).
+		SetTimeout(30 * time.Second).
+		SetRedirectPolicy(resty.RedirectNoPolicy())
+	defer func() { _ = sharedRestyClient.Close() }()
 
 	// Create the SearXNG client and search service (shared across all requests).
-	searxngClient := infra.NewClient(cfg.SearXNGURL, sharedHTTPClient)
+	searxngClient := infra.NewClient(cfg.SearXNGURL, sharedRestyClient)
 	searchSvc := application.NewSearchService(searxngClient)
 
 	// Create the MCP server instance.
