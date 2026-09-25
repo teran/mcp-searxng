@@ -13,8 +13,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/teran/mcp-searxng/config"
 )
+
+// testLogger returns a logrus logger that discards output, for running the
+// server in tests without polluting test output.
+func testLogger() *logrus.Logger {
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	return logger
+}
 
 func TestHealthEndpoint(t *testing.T) {
 	t.Parallel()
@@ -140,7 +150,7 @@ func TestRun_HealthEndpoint(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(ctx, cfg, mainLn, metricsLn)
+		errCh <- run(ctx, cfg, testLogger(), mainLn, metricsLn)
 	}()
 
 	waitForServer(t, "http://"+mainLn.Addr().String()+"/healthz", 3*time.Second)
@@ -189,7 +199,7 @@ func TestRun_MCPHandlerPing(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(ctx, cfg, mainLn, metricsLn)
+		errCh <- run(ctx, cfg, testLogger(), mainLn, metricsLn)
 	}()
 
 	addr := mainLn.Addr().String()
@@ -290,7 +300,7 @@ func TestRun_ShutdownViaContext(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(ctx, cfg, mainLn, metricsLn)
+		errCh <- run(ctx, cfg, testLogger(), mainLn, metricsLn)
 	}()
 
 	// Wait for server to be ready before cancelling.
@@ -322,7 +332,7 @@ func TestRun_ShutdownBeforeReady(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(ctx, cfg, mainLn, metricsLn)
+		errCh <- run(ctx, cfg, testLogger(), mainLn, metricsLn)
 	}()
 
 	select {
@@ -347,7 +357,7 @@ func TestRun_ServerStartError(t *testing.T) {
 		WriteTimeout:          5 * time.Second,
 	}
 
-	if err := Run(cfg); err == nil {
+	if err := Run(cfg, testLogger()); err == nil {
 		t.Fatal("expected Run to return an error for an invalid listen address")
 	}
 }
@@ -364,7 +374,7 @@ func TestRun_MetricsServerStartError(t *testing.T) {
 
 	// Whether the main port is grabbed (TOCTOU) or the metrics bind fails, Run
 	// must return a bind error — so this assertion is robust either way.
-	if err := Run(cfg); err == nil {
+	if err := Run(cfg, testLogger()); err == nil {
 		t.Fatal("expected Run to return an error for an invalid metrics address")
 	}
 }
@@ -381,7 +391,7 @@ func TestRun_WithMetricsPortSameAsMain(t *testing.T) {
 		WriteTimeout:          5 * time.Second,
 	}
 
-	if err := Run(cfg); err == nil {
+	if err := Run(cfg, testLogger()); err == nil {
 		t.Fatal("expected Run to return an error on metrics/main address conflict")
 	}
 }
@@ -406,7 +416,7 @@ func TestRun_Success(t *testing.T) {
 
 		errCh := make(chan error, 1)
 		go func() {
-			errCh <- Run(cfg)
+			errCh <- Run(cfg, testLogger())
 		}()
 
 		// Poll until the server is up. This also guarantees Run has registered

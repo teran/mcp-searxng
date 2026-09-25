@@ -6,11 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/sirupsen/logrus"
 )
 
 // checkBatchSize validates JSON-RPC batch request size.
@@ -141,11 +142,11 @@ func SanitizeLog(s string) string {
 // RecoveryMiddleware recovers from panics in downstream handlers, logs the
 // panic with a stack trace, and returns 500 Internal Server Error. Without
 // this middleware any panic in an HTTP goroutine would crash the entire server.
-func RecoveryMiddleware(next http.Handler) http.Handler {
+func RecoveryMiddleware(logger *logrus.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("ERROR panic recovered: %s", SanitizeLog(fmt.Sprintf("%v", rec)))
+				logger.WithField("panic", SanitizeLog(fmt.Sprintf("%v", rec))).Error("panic recovered")
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			}
 		}()
@@ -156,7 +157,7 @@ func RecoveryMiddleware(next http.Handler) http.Handler {
 // LoggingMiddleware logs MCP request details at INFO level.
 // Records: timestamp, MCP method name, HTTP method, request path, request
 // duration, request body size, and response body size.
-func LoggingMiddleware(next http.Handler) http.Handler {
+func LoggingMiddleware(logger *logrus.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -165,7 +166,7 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		// so reading is bounded to 1 MB.
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			log.Printf("INFO mcp_log request_error=read_body error=%v", err)
+			logger.WithField("error", err).Error("mcp_log request_error=read_body")
 			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
 			return
 		}
@@ -177,9 +178,15 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		// Reject batch requests that exceed MaxBatchSize to prevent
 		// amplification attacks.
 		if err := checkBatchSize(body); err != nil {
-			// Values are sanitized by SanitizeLog() below, so gosec G104/G203 is a false positive.
-			log.Printf("INFO mcp_log http_method=%s path=%s method=%s duration=%v req_size=%d resp_size=%d status=%d", //nolint:gosec // values sanitized via SanitizeLog()
-				SanitizeLog(r.Method), SanitizeLog(r.URL.Path), mcpMethod, time.Since(start), reqSize, 0, http.StatusBadRequest)
+			logger.WithFields(logrus.Fields{
+				"http_method": SanitizeLog(r.Method),
+				"path":        SanitizeLog(r.URL.Path),
+				"method":      mcpMethod,
+				"duration":    time.Since(start),
+				"req_size":    reqSize,
+				"resp_size":   0,
+				"status":      http.StatusBadRequest,
+			}).Info("mcp_log")
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -193,8 +200,14 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(lrw, r)
 
 		duration := time.Since(start)
-		// Values are sanitized by SanitizeLog() below, so gosec G104/G203 is a false positive.
-		log.Printf("INFO mcp_log http_method=%s path=%s method=%s duration=%v req_size=%d resp_size=%d status=%d", //nolint:gosec // values sanitized via SanitizeLog()
-			SanitizeLog(r.Method), SanitizeLog(r.URL.Path), mcpMethod, duration, reqSize, lrw.bodySize, lrw.statusCode)
+		logger.WithFields(logrus.Fields{
+			"http_method": SanitizeLog(r.Method),
+			"path":        SanitizeLog(r.URL.Path),
+			"method":      mcpMethod,
+			"duration":    duration,
+			"req_size":    reqSize,
+			"resp_size":   lrw.bodySize,
+			"status":      lrw.statusCode,
+		}).Info("mcp_log")
 	})
 }

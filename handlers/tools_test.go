@@ -4,15 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sirupsen/logrus"
 
 	"github.com/teran/mcp-searxng/application"
 	"github.com/teran/mcp-searxng/domain"
 	"github.com/teran/mcp-searxng/handlers"
 )
+
+// newTestLogger returns a logrus logger that discards output, so tool-handler
+// tests can pass a logger without polluting test output.
+func newTestLogger() *logrus.Logger {
+	logger := logrus.New()
+	logger.SetOutput(io.Discard)
+	return logger
+}
 
 type mockSearchRepo struct {
 	searchFunc func(ctx context.Context, params domain.SearchParams) (*domain.SearchResponse, error)
@@ -46,7 +56,7 @@ func TestNewSearchHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 			Query: "test query",
@@ -100,7 +110,7 @@ func TestNewSearchHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 			Query:      "test",
@@ -132,7 +142,7 @@ func TestNewSearchHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 			Query: "test",
@@ -152,7 +162,7 @@ func TestNewSearchHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 			Query: "test",
@@ -173,7 +183,7 @@ func TestNewSearchHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 			Query: "test",
@@ -212,7 +222,7 @@ func TestNewSearchNewsHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(svc)
+		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 
 		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
 			Query: "test news",
@@ -251,7 +261,7 @@ func TestNewSearchNewsHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(svc)
+		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
 			Query: "test",
@@ -284,7 +294,7 @@ func TestNewSearchNewsHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(svc)
+		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
 			Query:      "test",
@@ -305,7 +315,7 @@ func TestNewSearchNewsHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(svc)
+		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
 			Query: "test",
@@ -343,7 +353,7 @@ func TestNewSearchHandler_MaxResults(t *testing.T) {
 
 	t.Run("max_results truncates results", func(t *testing.T) {
 		svc := newMockService(makeMock(10))
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		maxResults := uint64(3)
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
@@ -367,7 +377,7 @@ func TestNewSearchHandler_MaxResults(t *testing.T) {
 
 	t.Run("max_results nil returns all results", func(t *testing.T) {
 		svc := newMockService(makeMock(10))
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 			Query: "test",
@@ -383,7 +393,7 @@ func TestNewSearchHandler_MaxResults(t *testing.T) {
 
 	t.Run("max_results larger than available returns all results", func(t *testing.T) {
 		svc := newMockService(makeMock(3))
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		maxResults := uint64(100)
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
@@ -401,7 +411,7 @@ func TestNewSearchHandler_MaxResults(t *testing.T) {
 
 	t.Run("max_results zero returns no results", func(t *testing.T) {
 		svc := newMockService(makeMock(10))
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		maxResults := uint64(0)
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
@@ -440,7 +450,7 @@ func TestNewSearchNewsHandler_MaxResults(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(svc)
+		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 
 		maxResults := uint64(2)
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
@@ -478,7 +488,7 @@ func TestNewSearchNewsHandler_MaxResults(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(svc)
+		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
 			Query: "test",
@@ -515,7 +525,7 @@ func TestNewSearchImagesHandler_MaxResults(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(svc)
+		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 
 		maxResults := uint64(4)
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
@@ -550,7 +560,7 @@ func TestNewSearchImagesHandler_MaxResults(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(svc)
+		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
 			Query: "test",
@@ -597,7 +607,7 @@ func TestSearchHelper_MaxResults_PreservesOtherFields(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		maxResults := uint64(3)
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
@@ -662,7 +672,7 @@ func TestSearchHelper_InfoboxAttributesAndURLs(t *testing.T) {
 		},
 	}
 	svc := newMockService(repo)
-	handler := handlers.NewSearchHandler(svc)
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 		Query: "test",
@@ -717,7 +727,7 @@ func TestNewSearchVideosHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(svc)
+		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
 
 		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
 			Query: "test video",
@@ -756,7 +766,7 @@ func TestNewSearchVideosHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(svc)
+		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
 			Query: "test",
@@ -789,7 +799,7 @@ func TestNewSearchVideosHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(svc)
+		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
 			Query:      "test",
@@ -810,7 +820,7 @@ func TestNewSearchVideosHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(svc)
+		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
 			Query: "test",
@@ -844,7 +854,7 @@ func TestNewSearchVideosHandler_MaxResults(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(svc)
+		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
 
 		maxResults := uint64(4)
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
@@ -879,7 +889,7 @@ func TestNewSearchVideosHandler_MaxResults(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(svc)
+		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
 
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
 			Query: "test",
@@ -915,7 +925,7 @@ func TestNewSearchMusicHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(svc)
+		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 
 		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
 			Query: "test music",
@@ -954,7 +964,7 @@ func TestNewSearchMusicHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(svc)
+		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
 			Query: "test",
@@ -987,7 +997,7 @@ func TestNewSearchMusicHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(svc)
+		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
 			Query:      "test",
@@ -1008,7 +1018,7 @@ func TestNewSearchMusicHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(svc)
+		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
 			Query: "test",
@@ -1042,7 +1052,7 @@ func TestNewSearchMusicHandler_MaxResults(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(svc)
+		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 
 		maxResults := uint64(4)
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
@@ -1077,7 +1087,7 @@ func TestNewSearchMusicHandler_MaxResults(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(svc)
+		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
 			Query: "test",
@@ -1115,7 +1125,7 @@ func TestSearchHelper_MaxResults_EdgeCases(t *testing.T) {
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
 		maxResults := uint64(1)
 		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
@@ -1146,7 +1156,7 @@ func TestNewSearchHandler_Validation(t *testing.T) {
 	svc := newMockService(repo)
 
 	t.Run("empty query returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 			Query: "",
 		})
@@ -1159,7 +1169,7 @@ func TestNewSearchHandler_Validation(t *testing.T) {
 	})
 
 	t.Run("query too long returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 		longQuery := strings.Repeat("a", 513)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 			Query: longQuery,
@@ -1173,7 +1183,7 @@ func TestNewSearchHandler_Validation(t *testing.T) {
 	})
 
 	t.Run("page too large returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchHandler(svc)
+		handler := handlers.NewSearchHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
 			Query: "test",
 			Page:  101,
@@ -1198,7 +1208,7 @@ func TestNewSearchMusicHandler_Validation(t *testing.T) {
 	svc := newMockService(repo)
 
 	t.Run("empty query returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchMusicHandler(svc)
+		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
 			Query: "",
 		})
@@ -1211,7 +1221,7 @@ func TestNewSearchMusicHandler_Validation(t *testing.T) {
 	})
 
 	t.Run("page too large returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchMusicHandler(svc)
+		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
 			Query: "test",
 			Page:  101,
@@ -1236,7 +1246,7 @@ func TestNewSearchNewsHandler_Validation(t *testing.T) {
 	svc := newMockService(repo)
 
 	t.Run("empty query returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchNewsHandler(svc)
+		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
 			Query: "",
 		})
@@ -1249,7 +1259,7 @@ func TestNewSearchNewsHandler_Validation(t *testing.T) {
 	})
 
 	t.Run("page too large returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchNewsHandler(svc)
+		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
 			Query: "test",
 			Page:  101,
@@ -1274,7 +1284,7 @@ func TestNewSearchImagesHandler_Validation(t *testing.T) {
 	svc := newMockService(repo)
 
 	t.Run("empty query returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchImagesHandler(svc)
+		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
 			Query: "",
 		})
@@ -1287,7 +1297,7 @@ func TestNewSearchImagesHandler_Validation(t *testing.T) {
 	})
 
 	t.Run("page too large returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchImagesHandler(svc)
+		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
 			Query: "test",
 			Page:  101,
@@ -1312,7 +1322,7 @@ func TestNewSearchVideosHandler_Validation(t *testing.T) {
 	svc := newMockService(repo)
 
 	t.Run("empty query returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchVideosHandler(svc)
+		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
 			Query: "",
 		})
@@ -1325,7 +1335,7 @@ func TestNewSearchVideosHandler_Validation(t *testing.T) {
 	})
 
 	t.Run("page too large returns validation error", func(t *testing.T) {
-		handler := handlers.NewSearchVideosHandler(svc)
+		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
 			Query: "test",
 			Page:  101,
@@ -1362,7 +1372,7 @@ func TestNewSearchImagesHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(svc)
+		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 
 		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
 			Query: "test image",
@@ -1401,7 +1411,7 @@ func TestNewSearchImagesHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(svc)
+		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
 			Query: "test",
@@ -1434,7 +1444,7 @@ func TestNewSearchImagesHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(svc)
+		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
 			Query:      "test",
@@ -1455,7 +1465,7 @@ func TestNewSearchImagesHandler(t *testing.T) { //nolint:gocognit
 			},
 		}
 		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(svc)
+		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 
 		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
 			Query: "test",

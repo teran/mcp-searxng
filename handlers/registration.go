@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sirupsen/logrus"
 
 	"github.com/teran/mcp-searxng/application"
 )
@@ -66,36 +67,36 @@ func toolAnnotations() *mcp.ToolAnnotations {
 // RegisterTools registers all MCP tools on the server with the given
 // SearchService. If metrics is non-nil, each tool handler is wrapped with
 // WrapToolHandler for per-tool Prometheus metrics (request count and duration).
-func RegisterTools(s *mcp.Server, metrics *Metrics, svc *application.SearchService) {
+func RegisterTools(s *mcp.Server, metrics *Metrics, logger *logrus.Logger, svc *application.SearchService) {
 	for _, tool := range ToolDefinitions() {
-		registerTool(s, tool, metrics, svc)
+		registerTool(s, tool, metrics, logger, svc)
 	}
 }
 
 // registerTool wires a single tool to its handler on the server, dispatching on
 // the tool name. The default branch panics on an unknown tool name — reachable
 // in tests by calling registerTool with a synthetic tool.
-func registerTool(s *mcp.Server, tool *mcp.Tool, metrics *Metrics, svc *application.SearchService) {
+func registerTool(s *mcp.Server, tool *mcp.Tool, metrics *Metrics, logger *logrus.Logger, svc *application.SearchService) {
 	switch tool.Name {
 	case "search":
 		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
-			return NewSearchHandler(svc)(ctx, nil, in)
+			return NewSearchHandler(logger, svc)(ctx, nil, in)
 		}))
 	case "search_news":
 		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchNewsInput) (*mcp.CallToolResult, SearchOutput, error) {
-			return NewSearchNewsHandler(svc)(ctx, nil, in)
+			return NewSearchNewsHandler(logger, svc)(ctx, nil, in)
 		}))
 	case "search_images":
 		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchImagesInput) (*mcp.CallToolResult, SearchOutput, error) {
-			return NewSearchImagesHandler(svc)(ctx, nil, in)
+			return NewSearchImagesHandler(logger, svc)(ctx, nil, in)
 		}))
 	case "search_videos":
 		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchVideosInput) (*mcp.CallToolResult, SearchOutput, error) {
-			return NewSearchVideosHandler(svc)(ctx, nil, in)
+			return NewSearchVideosHandler(logger, svc)(ctx, nil, in)
 		}))
 	case "search_music":
 		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchMusicInput) (*mcp.CallToolResult, SearchOutput, error) {
-			return NewSearchMusicHandler(svc)(ctx, nil, in)
+			return NewSearchMusicHandler(logger, svc)(ctx, nil, in)
 		}))
 	default:
 		panic("unhandled tool in RegisterTools: " + tool.Name)

@@ -144,7 +144,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 			GlobalBurst:    100,
 			PerClientLimit: rate.Limit(10),
 			PerClientBurst: 10,
-		})
+		}, testLogger())
 		t.Cleanup(stop)
 
 		handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +167,7 @@ func TestRateLimitMiddleware(t *testing.T) {
 			GlobalBurst:    1,
 			PerClientLimit: rate.Limit(1),
 			PerClientBurst: 1,
-		})
+		}, testLogger())
 		t.Cleanup(stop)
 
 		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -4,19 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/sirupsen/logrus"
 
 	"github.com/teran/mcp-searxng/application"
 	"github.com/teran/mcp-searxng/domain"
 )
 
 // Sentinel errors returned to the MCP client with user-friendly messages.
-// Detailed internal errors are logged server-side via log.Printf.
+// Detailed internal errors are logged server-side via the logger.
 var (
 	ErrSearchFailed = errors.New("search failed")
 	ErrQueryTooLong = errors.New("query exceeds maximum length")
@@ -337,14 +337,14 @@ func validatePage(page int) error {
 }
 
 // NewSearchHandler creates a handler for search.
-func NewSearchHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchInput, SearchOutput] {
+func NewSearchHandler(logger *logrus.Logger, svc *application.SearchService) mcp.ToolHandlerFor[SearchInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
-			log.Printf("ERROR search validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
-			log.Printf("ERROR search validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search: %w", err)
 		}
 
@@ -357,7 +357,7 @@ func NewSearchHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchI
 			SafeSearch: input.SafeSearch,
 		}, input.MaxResults)
 		if err != nil {
-			log.Printf("ERROR search: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search: %w", ErrSearchFailed)
 		}
 		return nil, output, nil
@@ -365,14 +365,14 @@ func NewSearchHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchI
 }
 
 // NewSearchNewsHandler creates a handler for search_news with presets: categories=["news"], time_range="day".
-func NewSearchNewsHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchNewsInput, SearchOutput] {
+func NewSearchNewsHandler(logger *logrus.Logger, svc *application.SearchService) mcp.ToolHandlerFor[SearchNewsInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchNewsInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
-			log.Printf("ERROR search_news validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_news validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_news: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
-			log.Printf("ERROR search_news validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_news validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_news: %w", err)
 		}
 
@@ -385,7 +385,7 @@ func NewSearchNewsHandler(svc *application.SearchService) mcp.ToolHandlerFor[Sea
 			SafeSearch: input.SafeSearch,
 		}, input.MaxResults)
 		if err != nil {
-			log.Printf("ERROR search_news: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_news: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_news: %w", ErrSearchFailed)
 		}
 		return nil, output, nil
@@ -393,14 +393,14 @@ func NewSearchNewsHandler(svc *application.SearchService) mcp.ToolHandlerFor[Sea
 }
 
 // NewSearchImagesHandler creates a handler for search_images with presets: categories=["images"].
-func NewSearchImagesHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchImagesInput, SearchOutput] {
+func NewSearchImagesHandler(logger *logrus.Logger, svc *application.SearchService) mcp.ToolHandlerFor[SearchImagesInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchImagesInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
-			log.Printf("ERROR search_images validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_images validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_images: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
-			log.Printf("ERROR search_images validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_images validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_images: %w", err)
 		}
 
@@ -412,7 +412,7 @@ func NewSearchImagesHandler(svc *application.SearchService) mcp.ToolHandlerFor[S
 			SafeSearch: input.SafeSearch,
 		}, input.MaxResults)
 		if err != nil {
-			log.Printf("ERROR search_images: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_images: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_images: %w", ErrSearchFailed)
 		}
 		return nil, output, nil
@@ -420,14 +420,14 @@ func NewSearchImagesHandler(svc *application.SearchService) mcp.ToolHandlerFor[S
 }
 
 // NewSearchVideosHandler creates a handler for search_videos with presets: categories=["videos"].
-func NewSearchVideosHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchVideosInput, SearchOutput] {
+func NewSearchVideosHandler(logger *logrus.Logger, svc *application.SearchService) mcp.ToolHandlerFor[SearchVideosInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchVideosInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
-			log.Printf("ERROR search_videos validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_videos validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_videos: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
-			log.Printf("ERROR search_videos validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_videos validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_videos: %w", err)
 		}
 
@@ -439,7 +439,7 @@ func NewSearchVideosHandler(svc *application.SearchService) mcp.ToolHandlerFor[S
 			SafeSearch: input.SafeSearch,
 		}, input.MaxResults)
 		if err != nil {
-			log.Printf("ERROR search_videos: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_videos: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_videos: %w", ErrSearchFailed)
 		}
 		return nil, output, nil
@@ -447,14 +447,14 @@ func NewSearchVideosHandler(svc *application.SearchService) mcp.ToolHandlerFor[S
 }
 
 // NewSearchMusicHandler creates a handler for search_music with presets: categories=["music"].
-func NewSearchMusicHandler(svc *application.SearchService) mcp.ToolHandlerFor[SearchMusicInput, SearchOutput] {
+func NewSearchMusicHandler(logger *logrus.Logger, svc *application.SearchService) mcp.ToolHandlerFor[SearchMusicInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchMusicInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
-			log.Printf("ERROR search_music validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_music validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_music: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
-			log.Printf("ERROR search_music validation: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_music validation: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_music: %w", err)
 		}
 
@@ -466,7 +466,7 @@ func NewSearchMusicHandler(svc *application.SearchService) mcp.ToolHandlerFor[Se
 			SafeSearch: input.SafeSearch,
 		}, input.MaxResults)
 		if err != nil {
-			log.Printf("ERROR search_music: %s", SanitizeLog(err.Error()))
+			logger.Errorf("search_music: %s", SanitizeLog(err.Error()))
 			return nil, SearchOutput{}, fmt.Errorf("search_music: %w", ErrSearchFailed)
 		}
 		return nil, output, nil

@@ -7,7 +7,7 @@ import (
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 )
 
-func TestLoad(t *testing.T) {
+func TestLoad(t *testing.T) { //nolint:gocognit
 	t.Run("all env vars set correctly", func(t *testing.T) {
 		t.Setenv("SEARXNG_URL", "http://searxng:8888")
 		t.Setenv("LISTEN_ADDR", ":9090")
@@ -15,6 +15,9 @@ func TestLoad(t *testing.T) {
 		t.Setenv("RATE_LIMIT_GLOBAL", "200")
 		t.Setenv("RATE_LIMIT_PER_CLIENT", "50")
 		t.Setenv("WRITE_TIMEOUT", "600s")
+		t.Setenv("LOG_LEVEL", "debug")
+		t.Setenv("LOG_FORMAT", "json")
+		t.Setenv("LOG_FILENAME", "/tmp/mcp-searxng.log")
 
 		cfg, err := Load()
 		if err != nil {
@@ -38,6 +41,15 @@ func TestLoad(t *testing.T) {
 		}
 		if cfg.WriteTimeout != 600*time.Second {
 			t.Errorf("WriteTimeout = %v, want %v", cfg.WriteTimeout, 600*time.Second)
+		}
+		if cfg.LogLevel != "debug" {
+			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "debug")
+		}
+		if cfg.LogFormat != "json" {
+			t.Errorf("LogFormat = %q, want %q", cfg.LogFormat, "json")
+		}
+		if cfg.LogFilename != "/tmp/mcp-searxng.log" {
+			t.Errorf("LogFilename = %q, want %q", cfg.LogFilename, "/tmp/mcp-searxng.log")
 		}
 	})
 
@@ -63,6 +75,15 @@ func TestLoad(t *testing.T) {
 		}
 		if cfg.WriteTimeout != 60*time.Second {
 			t.Errorf("WriteTimeout = %v, want %v", cfg.WriteTimeout, 60*time.Second)
+		}
+		if cfg.LogLevel != "info" {
+			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
+		}
+		if cfg.LogFormat != "text" {
+			t.Errorf("LogFormat = %q, want %q", cfg.LogFormat, "text")
+		}
+		if cfg.LogFilename != "" {
+			t.Errorf("LogFilename = %q, want empty", cfg.LogFilename)
 		}
 	})
 }
@@ -145,6 +166,53 @@ func TestLoad_Errors(t *testing.T) {
 		err := validateURLHost("://invalid")
 		if err == nil {
 			t.Fatal("validateURLHost expected error for unparseable URL")
+		}
+	})
+
+	t.Run("LOG_LEVEL invalid", func(t *testing.T) {
+		t.Setenv("SEARXNG_URL", "http://searxng:8888")
+		t.Setenv("LOG_LEVEL", "verbose")
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("Load() expected error for invalid LOG_LEVEL")
+		}
+	})
+
+	t.Run("LOG_LEVEL case-insensitive warning", func(t *testing.T) {
+		t.Setenv("SEARXNG_URL", "http://searxng:8888")
+		t.Setenv("LOG_LEVEL", "WARN")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() returned error: %v", err)
+		}
+		if cfg.LogLevel != "WARN" {
+			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "WARN")
+		}
+	})
+
+	t.Run("LOG_FORMAT invalid", func(t *testing.T) {
+		t.Setenv("SEARXNG_URL", "http://searxng:8888")
+		t.Setenv("LOG_FORMAT", "xml")
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("Load() expected error for invalid LOG_FORMAT")
+		}
+	})
+
+	t.Run("non-string value for validateLogLevel", func(t *testing.T) {
+		err := validation.Validate(42, validation.By(validateLogLevel))
+		if err == nil {
+			t.Fatal("validateLogLevel expected error for non-string value")
+		}
+	})
+
+	t.Run("non-string value for validateLogFormat", func(t *testing.T) {
+		err := validation.Validate(42, validation.By(validateLogFormat))
+		if err == nil {
+			t.Fatal("validateLogFormat expected error for non-string value")
 		}
 	})
 }
