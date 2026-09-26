@@ -92,5 +92,5 @@ func TestRegisterTools_PanicUnknownTool(t *testing.T) {
 		}
 	}()
 
-	registerTool(srv, &mcp.Tool{Name: "bogus"}, nil, testLogger(), nil)
+	registerTool(srv, &mcp.Tool{Name: "bogus"}, nil, testLogger(), nil, "http")
 }

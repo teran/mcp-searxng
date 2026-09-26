@@ -11,7 +11,8 @@ func TestLoad(t *testing.T) { //nolint:gocognit
 	t.Run("all env vars set correctly", func(t *testing.T) {
 		t.Setenv("SEARXNG_URL", "http://searxng:8888")
 		t.Setenv("LISTEN_ADDR", ":9090")
-		t.Setenv("PROMETHEUS_METRICS_ADDR", ":9091")
+		t.Setenv("INTERNAL_ADDR", ":9091")
+		t.Setenv("MODE", "http")
 		t.Setenv("RATE_LIMIT_GLOBAL", "200")
 		t.Setenv("RATE_LIMIT_PER_CLIENT", "50")
 		t.Setenv("WRITE_TIMEOUT", "600s")
@@ -30,8 +31,11 @@ func TestLoad(t *testing.T) { //nolint:gocognit
 		if cfg.ListenAddr != ":9090" {
 			t.Errorf("ListenAddr = %q, want %q", cfg.ListenAddr, ":9090")
 		}
-		if cfg.PrometheusMetricsAddr != ":9091" {
-			t.Errorf("PrometheusMetricsAddr = %q, want %q", cfg.PrometheusMetricsAddr, ":9091")
+		if cfg.InternalAddr != ":9091" {
+			t.Errorf("InternalAddr = %q, want %q", cfg.InternalAddr, ":9091")
+		}
+		if cfg.Mode != "http" {
+			t.Errorf("Mode = %q, want %q", cfg.Mode, "http")
 		}
 		if cfg.RateLimitGlobal != 200 {
 			t.Errorf("RateLimitGlobal = %d, want 200", cfg.RateLimitGlobal)
@@ -42,8 +46,8 @@ func TestLoad(t *testing.T) { //nolint:gocognit
 		if cfg.WriteTimeout != 600*time.Second {
 			t.Errorf("WriteTimeout = %v, want %v", cfg.WriteTimeout, 600*time.Second)
 		}
-		if cfg.LogLevel != "debug" {
-			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "debug")
+		if cfg.LogLevel == nil || *cfg.LogLevel != "debug" {
+			t.Errorf("LogLevel = %v, want %q", cfg.LogLevel, "debug")
 		}
 		if cfg.LogFormat != "json" {
 			t.Errorf("LogFormat = %q, want %q", cfg.LogFormat, "json")
@@ -64,8 +68,11 @@ func TestLoad(t *testing.T) { //nolint:gocognit
 		if cfg.ListenAddr != ":8080" {
 			t.Errorf("ListenAddr = %q, want %q", cfg.ListenAddr, ":8080")
 		}
-		if cfg.PrometheusMetricsAddr != ":8081" {
-			t.Errorf("PrometheusMetricsAddr = %q, want %q", cfg.PrometheusMetricsAddr, ":8081")
+		if cfg.InternalAddr != ":8081" {
+			t.Errorf("InternalAddr = %q, want %q", cfg.InternalAddr, ":8081")
+		}
+		if cfg.Mode != "stdio" {
+			t.Errorf("Mode = %q, want %q", cfg.Mode, "stdio")
 		}
 		if cfg.RateLimitGlobal != 100 {
 			t.Errorf("RateLimitGlobal = %d, want 100", cfg.RateLimitGlobal)
@@ -76,8 +83,8 @@ func TestLoad(t *testing.T) { //nolint:gocognit
 		if cfg.WriteTimeout != 60*time.Second {
 			t.Errorf("WriteTimeout = %v, want %v", cfg.WriteTimeout, 60*time.Second)
 		}
-		if cfg.LogLevel != "info" {
-			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
+		if cfg.LogLevel != nil {
+			t.Errorf("LogLevel = %v, want nil (unset)", cfg.LogLevel)
 		}
 		if cfg.LogFormat != "text" {
 			t.Errorf("LogFormat = %q, want %q", cfg.LogFormat, "text")
@@ -88,7 +95,7 @@ func TestLoad(t *testing.T) { //nolint:gocognit
 	})
 }
 
-func TestLoad_Errors(t *testing.T) {
+func TestLoad_Errors(t *testing.T) { //nolint:gocognit
 	t.Run("SEARXNG_URL is required", func(t *testing.T) {
 		t.Setenv("SEARXNG_URL", "")
 
@@ -187,8 +194,8 @@ func TestLoad_Errors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Load() returned error: %v", err)
 		}
-		if cfg.LogLevel != "WARN" {
-			t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "WARN")
+		if cfg.LogLevel == nil || *cfg.LogLevel != "WARN" {
+			t.Errorf("LogLevel = %v, want %q", cfg.LogLevel, "WARN")
 		}
 	})
 
@@ -213,6 +220,94 @@ func TestLoad_Errors(t *testing.T) {
 		err := validation.Validate(42, validation.By(validateLogFormat))
 		if err == nil {
 			t.Fatal("validateLogFormat expected error for non-string value")
+		}
+	})
+
+	t.Run("MODE invalid", func(t *testing.T) {
+		t.Setenv("SEARXNG_URL", "http://searxng:8888")
+		t.Setenv("MODE", "grpc")
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("Load() expected error for invalid MODE")
+		}
+	})
+
+	t.Run("MODE non-string value", func(t *testing.T) {
+		err := validation.Validate(42, validation.By(validateMode))
+		if err == nil {
+			t.Fatal("validateMode expected error for non-string value")
+		}
+	})
+}
+
+func TestLoad_InternalAddrLegacyShim(t *testing.T) {
+	t.Setenv("SEARXNG_URL", "http://searxng:8888")
+
+	t.Run("legacy variable used when INTERNAL_ADDR unset", func(t *testing.T) {
+		t.Setenv("PROMETHEUS_METRICS_ADDR", ":9091")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() returned error: %v", err)
+		}
+		if cfg.InternalAddr != ":9091" {
+			t.Errorf("InternalAddr = %q, want %q (legacy shim)", cfg.InternalAddr, ":9091")
+		}
+	})
+
+	t.Run("INTERNAL_ADDR wins when both are set", func(t *testing.T) {
+		t.Setenv("PROMETHEUS_METRICS_ADDR", ":9091")
+		t.Setenv("INTERNAL_ADDR", ":9092")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() returned error: %v", err)
+		}
+		if cfg.InternalAddr != ":9092" {
+			t.Errorf("InternalAddr = %q, want %q", cfg.InternalAddr, ":9092")
+		}
+	})
+
+	t.Run("default used when neither set", func(t *testing.T) {
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() returned error: %v", err)
+		}
+		if cfg.InternalAddr != ":8081" {
+			t.Errorf("InternalAddr = %q, want %q", cfg.InternalAddr, ":8081")
+		}
+	})
+}
+
+func TestValidate(t *testing.T) {
+	t.Run("valid config returns nil", func(t *testing.T) {
+		cfg := Config{
+			SearXNGURL:         "http://searxng:8888",
+			ListenAddr:         ":8080",
+			InternalAddr:       ":8081",
+			RateLimitGlobal:    100,
+			RateLimitPerClient: 10,
+			WriteTimeout:       60,
+			Mode:               "stdio",
+			LogFormat:          "text",
+		}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() returned error: %v", err)
+		}
+	})
+
+	t.Run("invalid mode returns error", func(t *testing.T) {
+		cfg := Config{
+			SearXNGURL:         "http://searxng:8888",
+			RateLimitGlobal:    100,
+			RateLimitPerClient: 10,
+			WriteTimeout:       60,
+			Mode:               "grpc",
+			LogFormat:          "text",
+		}
+		if err := cfg.Validate(); err == nil {
+			t.Fatal("Validate() expected error for invalid mode, got nil")
 		}
 	})
 }

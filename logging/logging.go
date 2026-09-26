@@ -9,6 +9,7 @@ package logging
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -51,33 +52,87 @@ func ParseFormat(s string) (logrus.Formatter, error) {
 	}
 }
 
-// New builds a *logrus.Logger from the given level, format and (optional)
-// filename. When filename is non-empty the logger appends to that file
-// (created with 0600 permissions) instead of writing to stdout.
-func New(level, format, filename string) (*logrus.Logger, error) {
-	lvl, err := ParseLevel(level)
+// Options configures the logger built by New. It is transport-agnostic so the
+// logging package does not need to import config (avoiding an import cycle):
+//
+//   - Mode     — "http" or "stdio". Determines whether logging is enabled by
+//     default and where output is routed (see L02/L01 in the SPEC).
+//   - Level    — optional explicit level; nil means LOG_LEVEL was unset.
+//   - Format   — "text" (default) or "json".
+//   - Filename — optional log file path; when non-empty the logger appends to
+//     it (created with 0600 permissions) instead of stdout.
+type Options struct {
+	Mode     string
+	Level    *string
+	Format   string
+	Filename string
+}
+
+// New builds a *logrus.Logger from the given Options.
+//
+// Logging enablement (L02): a logger is enabled when the mode is "http" (the
+// default assumption is that HTTP deployments want logs) or an explicit level
+// was provided. A stdio deployment with LOG_LEVEL unset is disabled: the
+// returned logger writes to io.Discard at PanicLevel so it remains a valid
+// logger for wiring into slog/the MCP SDK but produces no output.
+//
+// Output channel (L01): when Filename is set the logger appends to that file;
+// an http logger otherwise writes to stdout; an enabled stdio logger with no
+// filename writes to io.Discard (never stdout, N04GO).
+func New(opts Options) (*logrus.Logger, error) {
+	formatter, err := ParseFormat(opts.Format)
 	if err != nil {
 		return nil, err
 	}
 
-	formatter, err := ParseFormat(format)
-	if err != nil {
-		return nil, err
+	enabled := opts.Mode == "http" || opts.Level != nil
+	if !enabled {
+		// Disabled (stdio + LOG_LEVEL unset): a valid but silent logger. The
+		// SDK still needs a non-nil logger, so we return one that drops all
+		// output rather than a nil pointer.
+		logger := logrus.New()
+		logger.SetOutput(io.Discard)
+		logger.SetLevel(logrus.PanicLevel)
+		return logger, nil
 	}
 
-	out := os.Stdout
-	if filename != "" {
+	// Resolve level: http defaults to InfoLevel unless an explicit level is set.
+	level := logrus.InfoLevel
+	if opts.Level != nil {
+		lvl, err := ParseLevel(*opts.Level)
+		if err != nil {
+			return nil, err
+		}
+		level = lvl
+	}
+
+	var out io.Writer
+	switch {
+	case opts.Filename != "":
 		// #nosec G304 -- filename comes from operator-controlled config (LOG_FILENAME), not user input.
-		f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		f, err := os.OpenFile(opts.Filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 		if err != nil {
 			return nil, fmt.Errorf("open log file: %w", err)
 		}
 		out = f
+	case opts.Mode == "http":
+		out = os.Stdout
+	default:
+		// Enabled stdio with no filename: never write to stdout (N04GO).
+		out = io.Discard
 	}
 
 	logger := logrus.New()
 	logger.SetOutput(out)
 	logger.SetFormatter(formatter)
-	logger.SetLevel(lvl)
+	logger.SetLevel(level)
 	return logger, nil
+}
+
+// NewString is a thin compatibility wrapper around the Options-based New. It
+// keeps the previous string-based constructor available for existing callers
+// and tests, treating the logger as an http logger (always enabled) with the
+// given level, format and optional filename.
+func NewString(level, format, filename string) (*logrus.Logger, error) {
+	return New(Options{Mode: "http", Level: &level, Format: format, Filename: filename})
 }

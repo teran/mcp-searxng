@@ -67,37 +67,46 @@ func toolAnnotations() *mcp.ToolAnnotations {
 // RegisterTools registers all MCP tools on the server with the given
 // SearchService. If metrics is non-nil, each tool handler is wrapped with
 // WrapToolHandler for per-tool Prometheus metrics (request count and duration).
+// Each handler is also wrapped with WrapAccessLog using "http" as the source.
+// Prefer RegisterToolsWithSource when the transport mode is known.
 func RegisterTools(s *mcp.Server, metrics *Metrics, logger *logrus.Logger, svc *application.SearchService) {
+	RegisterToolsWithSource(s, metrics, logger, svc, "http")
+}
+
+// RegisterToolsWithSource registers all MCP tools like RegisterTools, wiring
+// each handler through WrapToolHandler (metrics) and WrapAccessLog (L08 access
+// log) with the given source label ("http" or "stdio").
+func RegisterToolsWithSource(s *mcp.Server, metrics *Metrics, logger *logrus.Logger, svc *application.SearchService, source string) {
 	for _, tool := range ToolDefinitions() {
-		registerTool(s, tool, metrics, logger, svc)
+		registerTool(s, tool, metrics, logger, svc, source)
 	}
 }
 
 // registerTool wires a single tool to its handler on the server, dispatching on
 // the tool name. The default branch panics on an unknown tool name — reachable
 // in tests by calling registerTool with a synthetic tool.
-func registerTool(s *mcp.Server, tool *mcp.Tool, metrics *Metrics, logger *logrus.Logger, svc *application.SearchService) {
+func registerTool(s *mcp.Server, tool *mcp.Tool, metrics *Metrics, logger *logrus.Logger, svc *application.SearchService, source string) {
 	switch tool.Name {
 	case "search":
-		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
+		mcp.AddTool(s, tool, WrapAccessLog(logger, source, tool.Name, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
 			return NewSearchHandler(logger, svc)(ctx, nil, in)
-		}))
+		})))
 	case "search_news":
-		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchNewsInput) (*mcp.CallToolResult, SearchOutput, error) {
+		mcp.AddTool(s, tool, WrapAccessLog(logger, source, tool.Name, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchNewsInput) (*mcp.CallToolResult, SearchOutput, error) {
 			return NewSearchNewsHandler(logger, svc)(ctx, nil, in)
-		}))
+		})))
 	case "search_images":
-		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchImagesInput) (*mcp.CallToolResult, SearchOutput, error) {
+		mcp.AddTool(s, tool, WrapAccessLog(logger, source, tool.Name, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchImagesInput) (*mcp.CallToolResult, SearchOutput, error) {
 			return NewSearchImagesHandler(logger, svc)(ctx, nil, in)
-		}))
+		})))
 	case "search_videos":
-		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchVideosInput) (*mcp.CallToolResult, SearchOutput, error) {
+		mcp.AddTool(s, tool, WrapAccessLog(logger, source, tool.Name, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchVideosInput) (*mcp.CallToolResult, SearchOutput, error) {
 			return NewSearchVideosHandler(logger, svc)(ctx, nil, in)
-		}))
+		})))
 	case "search_music":
-		mcp.AddTool(s, tool, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchMusicInput) (*mcp.CallToolResult, SearchOutput, error) {
+		mcp.AddTool(s, tool, WrapAccessLog(logger, source, tool.Name, WrapToolHandler(metrics, tool.Name, func(ctx context.Context, _ *mcp.CallToolRequest, in SearchMusicInput) (*mcp.CallToolResult, SearchOutput, error) {
 			return NewSearchMusicHandler(logger, svc)(ctx, nil, in)
-		}))
+		})))
 	default:
 		panic("unhandled tool in RegisterTools: " + tool.Name)
 	}
