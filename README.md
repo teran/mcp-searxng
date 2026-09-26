@@ -3,9 +3,9 @@
 <p align="center">
   <h1 align="center">mcp-searxng</h1>
   <p align="center">
-    <em>The remote MCP server for SearXNG</em>
+    <em>The hybrid MCP server for SearXNG</em>
     <br>
-    Deploy once. Configure your client. Let any AI assistant search the web.
+    One binary. Two transports. Let any AI assistant search the web.
   </p>
 </p>
 
@@ -35,23 +35,26 @@
 
 # mcp-searxng
 
-**Remote MCP server for SearXNG** — connects AI assistants to a [SearXNG](https://docs.searxng.org/) meta search engine via the [Model Context Protocol](https://modelcontextprotocol.io/) over HTTP.
+**Hybrid MCP server for SearXNG** — connects AI assistants to a [SearXNG](https://docs.searxng.org/) meta search engine via the [Model Context Protocol](https://modelcontextprotocol.io/). A single binary supports **both** a local **stdio** transport (the default) and a remote **Streamable HTTP** transport (`-mode http`), so you can run it as a local subprocess or deploy it once on your infrastructure.
 
-> For the full specification — including detailed tool input/output schemas, middleware chain, and security considerations — see [SPEC.md](SPEC.md).
+> For the full specification — including detailed tool input/output schemas, launch modes, middleware chain, and security considerations — see [SPEC.md](SPEC.md).
 
 ## Key Differentiators
 
-### Remote by design (not stdio-bound)
+### Hybrid by design (stdio default + remote HTTP)
 
-Most MCP servers run as a local stdio subprocess — every user must install and run foreign code on their machine. **mcp-searxng** speaks MCP over [Streamable HTTP](https://spec.modelcontextprotocol.io/specification/2025-03-26/architecture/transports/), just like any standard remote MCP server. You configure it once in your MCP client's remote server list, and you're done. No local daemon, no installation, no foreign code on your workstation.
+One binary selects its launch mode at startup via a **`-mode http|stdio`** CLI flag or the **`MODE`** environment variable (the flag overrides the env var). The default is **`stdio`**, so running the raw binary with no arguments starts a local MCP subprocess — no foreign long-lived daemon on your machine. Adding **`-mode http`** turns it into a standard remote MCP server speaking [Streamable HTTP](https://spec.modelcontextprotocol.io/specification/2025-03-26/architecture/transports/): configure it once in your MCP client's remote server list, deploy one instance on your infrastructure (behind TLS), and point any MCP-compatible AI assistant to it.
 
 ### Deploy once, search from anywhere
 
-Run **one instance** on your infrastructure (behind TLS) and point any MCP-compatible AI assistant to it. The server handles rate limiting (global + per-client), request logging, and Prometheus metrics out of the box.
+In **`-mode http`**, run **one instance** on your infrastructure (behind TLS) and point any MCP-compatible AI assistant to it. The server handles rate limiting (global + per-client), request logging, and Prometheus metrics out of the box. In **stdio** mode, the server runs as a local subprocess trusted by the calling client.
 
-### No authentication — security at the network level
+### Authentication depends on launch mode
 
-The MCP server has no built-in authentication. SearXNG API access is controlled at the network boundary (VPN, firewall, or reverse proxy). The server is designed to be deployed behind a TLS-terminating proxy that handles authentication — or on an internal network where direct access is restricted.
+The MCP server has **no built-in authentication** (no OAuth2). How access is controlled depends on the transport:
+
+- **`-mode http`** — the server is a read-only search proxy intended to sit behind a TLS-terminating reverse proxy that handles authentication (or on an internal network where direct access is restricted). Rate limiting (global + per-client) protects the public endpoint.
+- **`-mode stdio`** — the server runs as an OS-local process spawned by the calling client. Authorization is inherited from the OS user/environment that launches it; there is no rate limiting because the process is local and trusted.
 
 ### Security & compliance posture
 
@@ -61,11 +64,11 @@ The MCP server has no built-in authentication. SearXNG API access is controlled 
 | **Static binary** | `CGO_ENABLED=0` — no libc, no dynamic linking |
 | **Multi-arch** | linux/amd64 + linux/arm64 + darwin/amd64 + darwin/arm64 + windows/amd64 |
 | **Non-root user** | Runs as UID 65534 (nobody) |
-| **Rate limiting** | Two-tier: global (100 rps) + per-client (10 rps) |
-| **Body limits** | Request body capped at 1 MB, responses at 10 MB |
+| **Rate limiting** | Two-tier: global (100 rps) + per-client (10 rps) — **HTTP mode only** |
+| **Body limits** | Request body capped at 1 MB, responses at 10 MB — **HTTP mode only** |
 | **Log sanitisation** | All log strings stripped of control characters; credentials in SearXNG URL redacted |
-| **No redirects** | HTTP redirects disabled (`CheckRedirect: http.ErrUseLastResponse`) |
-| **Prometheus metrics** | Separate HTTP server (default `:8081`) with no auth — network-restrict in production |
+| **No redirects** | HTTP redirects disabled (`RedirectNoPolicy`) |
+| **Prometheus metrics** | Separate internal HTTP server (default `:8081`) with no auth — network-restrict in production |
 
 ## Tools
 
@@ -77,16 +80,56 @@ The MCP server has no built-in authentication. SearXNG API access is controlled 
 | `search_videos` | Video search — convenience wrapper with preset `categories=["videos"]` |
 | `search_music` | Music search — convenience wrapper with preset `categories=["music"]` |
 
+## Launch modes
+
+The server selects its transport at startup. The **`-mode`** CLI flag and the **`MODE`** env var are equivalent; when both are present the flag wins.
+
+```bash
+# Local stdio subprocess (DEFAULT — no flag needed)
+./mcp-searxng
+
+# Remote Streamable HTTP server on :8080
+./mcp-searxng -mode http
+```
+
+Equivalent via environment:
+
+```bash
+export MODE=stdio        # or MODE=http
+./mcp-searxng
+```
+
+### `-mode http`
+
+- Streamable HTTP transport on `LISTEN_ADDR` (default `:8080`).
+- **Logging is always enabled** at the default level `info` and written to **stdout** (12-factor style).
+- Applies the full middleware chain: recovery → metrics → rate limit → body limit → logging, and exposes `GET /healthz`.
+- Rate limiting (global + per-client) and request body limits are active.
+
+### `-mode stdio` (default)
+
+- STDIO transport (`mcp.StdioTransport`) — the MCP protocol flows over stdin/stdout.
+- **Logging is enabled only when `LOG_LEVEL` is set**; it is written to the `LOG_FILENAME` file (created with `0600` permissions) and **never** to stdout — this protects the JSON-RPC stdio channel from log noise.
+  - If stdio logging is enabled but `LOG_FILENAME` is empty, log output is discarded.
+- No HTTP middleware, no rate limiting (the process is local and trusted).
+
+> **Note:** the internal observability listener on `INTERNAL_ADDR` (Prometheus `/metrics`, plus `/healthz` in stdio mode) runs in **both** modes — see the observability details below.
+
 ## Configuration
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `SEARXNG_URL` | Yes | — | Base URL of the SearXNG instance (e.g. `http://searxng:8888`) |
-| `LISTEN_ADDR` | No | `:8080` | MCP server listen address |
-| `PROMETHEUS_METRICS_ADDR` | No | `:8081` | Prometheus metrics endpoint address |
-| `RATE_LIMIT_GLOBAL` | No | `100` | Global rate limit (requests/second) |
-| `RATE_LIMIT_PER_CLIENT` | No | `10` | Per-client rate limit (requests/second) |
-| `WRITE_TIMEOUT` | No | `300s` | HTTP write timeout |
+| `MODE` | No | `stdio` | Launch mode: `http` or `stdio` (also selectable via the `-mode` CLI flag, which overrides the env var) |
+| `LISTEN_ADDR` | No | `:8080` | MCP Streamable HTTP listen address (HTTP mode only) |
+| `INTERNAL_ADDR` | No | `:8081` | Internal observability listener (Prometheus `/metrics` + `/healthz`), served in both modes |
+| `PROMETHEUS_METRICS_ADDR` | No | (deprecated) | **Deprecated** alias for `INTERNAL_ADDR`; honored only when `INTERNAL_ADDR` is unset |
+| `LOG_LEVEL` | No | (unset) | Log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`). HTTP mode defaults to `info`; in stdio mode setting this enables file logging |
+| `LOG_FORMAT` | No | `text` | Log format: `text` or `json` |
+| `LOG_FILENAME` | No | (empty) | Log file path; when set, logs are appended to this file instead of stdout |
+| `RATE_LIMIT_GLOBAL` | No | `100` | Global rate limit (requests/second) — HTTP mode only |
+| `RATE_LIMIT_PER_CLIENT` | No | `10` | Per-client rate limit (requests/second) — HTTP mode only |
+| `WRITE_TIMEOUT` | No | `60s` | HTTP write timeout (HTTP mode only) |
 
 ## Quick Start
 
@@ -109,12 +152,26 @@ docker run -d --name searxng -p 8888:8080 searxng/searxng
 ```bash
 export SEARXNG_URL=http://localhost:8888
 
-# Using Go
+# Local stdio (default mode — no flag needed)
 go run ./cmd/server
 
-# Or Docker
+# Remote HTTP server
+go run ./cmd/server -mode http
+
+# Or Docker (the published image runs in HTTP mode on :8080)
 docker run -e SEARXNG_URL=http://searxng:8888 -p 8080:8080 ghcr.io/teran/mcp-searxng:latest
 ```
+
+> **Note:** the raw binary defaults to **stdio**. The published Docker image is intended to serve **HTTP** on `:8080` by pinning `-mode http` in its `ENTRYPOINT`; until that Dockerfile change lands, run the container with an explicit `-mode http` (e.g. via `command`/`args`) or `MODE=http` to get the remote HTTP server.
+
+### Observability
+
+In **both** modes the server binds an internal observability listener on `INTERNAL_ADDR` (default `:8081`):
+
+- **Prometheus `/metrics`** — Go runtime + custom MCP metrics (see [SPEC.md](SPEC.md)). Served on the internal listener in both modes.
+- **`/healthz`** — in **stdio** mode it is served on the internal listener (there is no main HTTP listener); in **HTTP** mode it is exposed on the main HTTP listener (`:8080`), bypassing all middleware.
+
+The internal listener has no built-in authentication — restrict it to the network in production.
 
 ### 3. Configure your MCP client
 

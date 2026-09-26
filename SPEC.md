@@ -3,28 +3,54 @@
 ## Overview
 
 An MCP (Model Context Protocol) server for [SearXNG](https://docs.searxng.org/).  
-This server exposes SearXNG search functionality through the MCP protocol using **Streamable HTTP** transport (remote mode), allowing AI assistants to perform web searches via a SearXNG instance.
+This server exposes SearXNG search functionality through the MCP protocol using a **hybrid** set of transports: a local **stdio** transport (the default) and a remote **Streamable HTTP** transport (`-mode http`). The same binary selects its launch mode at startup, so it can run as a local subprocess or as a remote server.
 
 ## Key Differentiators
 
-- **Remote (HTTP) transport** — uses MCP Streamable HTTP protocol; not stdio-bound.
-- **No authentication** — the server operates as a public MCP server without per-request authentication. SearXNG API credentials are handled at the network level (VPN, firewall, or reverse proxy).
+- **Hybrid transport** — a single binary supports both **stdio** (default) and **Streamable HTTP** (remote), selected via `-mode http|stdio` or the `MODE` env var.
+- **No built-in authentication** — there is no OAuth2. In HTTP mode the server is a read-only search proxy deployed behind a TLS-terminating reverse proxy; in stdio mode it is an OS-local process whose authorization is inherited from the OS user/environment.
+- **Mode-aware logging** — HTTP mode logs to stdout (always on); stdio mode logs to a file only when enabled, and never corrupts the stdio channel.
 - **Full query parameter support** — exposes SearXNG search parameters including categories, language, time range, safe search, and pagination.
+
+## Launch Mode / Transport Decision (M02)
+
+The server is a **Hybrid** MCP server (M06): one binary that binds whichever transport the operator selects at startup. This avoids forcing every user to either install a local daemon or expose a public endpoint.
+
+| Mode | Transport | Default | Use case |
+|------|-----------|---------|----------|
+| `stdio` | `mcp.StdioTransport` | **yes** | Local subprocess spawned by an MCP client on the same machine |
+| `http` | Streamable HTTP | no | Remote server deployed once behind TLS and shared by many clients |
+
+Selection precedence: the **`-mode`** CLI flag overrides the **`MODE`** env var; the env var overrides the built-in default of `stdio`.
+
+- **`stdio`** — the MCP protocol flows over stdin/stdout. There is **no** HTTP middleware, **no** rate limiting (the process is local and trusted), and logging is file-based (see [Logging](#logging)).
+- **`http`** — the server exposes the MCP Streamable HTTP handler on `LISTEN_ADDR` (default `:8080`), wrapped in the full HTTP middleware chain (recovery → metrics → rate limit → body limit → logging) plus `GET /healthz`. Rate limiting and body limits apply only in this mode.
+
+Both modes share the same tool set, the same internal observability listener, and the same transport-agnostic per-tool access log.
+
+## Authentication Decision (M03)
+
+The server implements **no OAuth2** and carries no user credentials. Access control is delegated to the transport's trust boundary:
+
+- **`-mode http`** — a read-only search proxy intended to sit behind a TLS-terminating reverse proxy that performs authentication (or on an internal network with restricted access). The public endpoint is protected by two-tier rate limiting.
+- **`-mode stdio`** — an OS-local process spawned by the calling client. Authorization is inherited from the OS user and environment that launch it; the process is trusted and not rate limited.
 
 ## Architecture
 
 ```
-┌──────────────────┐      MCP (Streamable HTTP)      ┌───────────────────────┐
-│  MCP Client      │  ◄──────────────────────────►   │  mcp-searxng          │
-│  (AI Assistant)  │                                  │  (Go server)          │
-└──────────────────┘                                   └──────┬────────────────
-                                                               │ HTTP (no auth)
-                                                               ▼
-                                                    ┌───────────────────────┐
-                                                    │  SearXNG Instance     │
-                                                    │  Search API           │
-                                                    └───────────────────────┘
+┌──────────────────┐      MCP (stdio OR Streamable HTTP)  ┌───────────────────────┐
+│  MCP Client      │  ◄────────────────────────────────►  │  mcp-searxng          │
+│  (AI Assistant)  │                                       │  (Go server, hybrid)  │
+└──────────────────┘                                       └──────┬────────────────
+                                                                 │ HTTP (no auth)
+                                                                 ▼
+                                                      ┌───────────────────────┐
+                                                      │  SearXNG Instance     │
+                                                      │  Search API           │
+                                                      └───────────────────────┘
 ```
+
+The client may connect over **stdio** (local subprocess) or **Streamable HTTP** (remote). In both cases the server calls the SearXNG Search API over HTTP with no per-request authentication.
 
 ## Technology Stack
 
@@ -32,24 +58,29 @@ This server exposes SearXNG search functionality through the MCP protocol using 
 |-------------------|-----------------------------------------------------------------|
 | Language          | Go                                                              |
 | MCP SDK           | `github.com/modelcontextprotocol/go-sdk`                        |
-| Transport         | Streamable HTTP (MCP spec 2025-03-26+, remote-capable)          |
-| HTTP Router       | `net/http` standard library + middleware pattern                |
-| Tool Registration | `handlers/registration.go` — `RegisterTools(srv, metrics, svc)` |
+| Transport         | Hybrid: stdio (default) + Streamable HTTP (MCP spec 2025-03-26+) |
+| HTTP Router       | `net/http` standard library + middleware pattern (HTTP mode)    |
+| Tool Registration | `handlers/registration.go` — `RegisterToolsWithSource(srv, metrics, logger, svc, source)` |
 | DI Pattern        | Explicit constructor injection (no context-based lookups)       |
-| Metrics           | Prometheus (Go runtime + custom MCP metrics) on port 8081       |
+| Metrics           | Prometheus (Go runtime + custom MCP metrics) on `INTERNAL_ADDR` (default `:8081`) |
 
 ## Configuration (Environment Variables)
 
 | Variable               | Required | Default | Description                          |
 |------------------------|----------|---------|--------------------------------------|
 | `SEARXNG_URL`          | Yes      | —       | Base URL of the SearXNG instance (e.g. `http://searxng:8888`) |
-| `LISTEN_ADDR`          | No       | `:8080` | TCP address to listen on             |
-| `PROMETHEUS_METRICS_ADDR` | No    | `:8081` | TCP address for the Prometheus `/metrics` endpoint (separate HTTP server, no auth) |
-| `RATE_LIMIT_GLOBAL`    | No       | `100`   | Global rate limit (requests/second)  |
-| `RATE_LIMIT_PER_CLIENT`| No       | `10`    | Per-client IP rate limit (requests/second) |
-| `WRITE_TIMEOUT`        | No       | `60s`   | HTTP write timeout (Go duration, e.g. `60s`, `5m`) |
+| `MODE`                 | No       | `stdio` | Launch mode: `http` or `stdio` (overridden by the `-mode` CLI flag) |
+| `LISTEN_ADDR`          | No       | `:8080` | TCP address for the MCP Streamable HTTP listener (HTTP mode only) |
+| `INTERNAL_ADDR`        | No       | `:8081` | TCP address for the internal observability listener (`/metrics`, and `/healthz` in stdio mode); bound in **both** modes |
+| `PROMETHEUS_METRICS_ADDR` | No    | (deprecated) | **Deprecated** legacy alias for `INTERNAL_ADDR`; honored only when `INTERNAL_ADDR` is unset |
+| `LOG_LEVEL`            | No       | (unset) | Log level (`debug`, `info`, `warn`, `error`, `fatal`, `panic`). `nil` when unset. HTTP mode defaults to `info`; in stdio mode setting it enables file logging |
+| `LOG_FORMAT`           | No       | `text`  | Log format: `text` (default) or `json` |
+| `LOG_FILENAME`         | No       | (empty) | Log file path; when set, logs are appended to this file (created with `0600` permissions) instead of stdout |
+| `RATE_LIMIT_GLOBAL`    | No       | `100`   | Global rate limit (requests/second) — HTTP mode only |
+| `RATE_LIMIT_PER_CLIENT`| No       | `10`    | Per-client IP rate limit (requests/second) — HTTP mode only |
+| `WRITE_TIMEOUT`        | No       | `60s`   | HTTP write timeout (Go duration, e.g. `60s`, `5m`) — HTTP mode only |
 
-The MCP server listens on the `/` HTTP path via the Streamable HTTP handler.
+In HTTP mode the MCP server listens on the `/` HTTP path via the Streamable HTTP handler; `GET /healthz` is also exposed on the main listener (bypassing all middleware).
 
 ## MCP Tools
 
@@ -202,9 +233,67 @@ Search for music. Convenience wrapper around `search` with presets: `categories=
 
 ---
 
+## Logging (L02 / L01 / L06 / L08 / L09)
+
+Logging is **mode-aware** — the output channel and whether logging is enabled at all depend on the launch mode, so the stdio JSON-RPC channel is never polluted by log output (N04).
+
+### Enablement (L02)
+
+A logger is enabled when:
+
+- the mode is **`http`** (always enabled — HTTP deployments are expected to log), **or**
+- an explicit **`LOG_LEVEL`** is provided (any mode).
+
+A **stdio** deployment with `LOG_LEVEL` unset gets a silent, valid logger (drops all output at PanicLevel) so the MCP SDK still receives a non-nil logger.
+
+### Output channel (L01)
+
+| Mode | Output | Notes |
+|------|--------|-------|
+| `http` | **stdout** | Default level `info` (12-factor style) |
+| `stdio` (enabled) | **file** (`LOG_FILENAME`, created with `0600`) | `LOG_FILENAME` empty → output discarded; never stdout |
+| `stdio` (disabled) | none | Logging off |
+
+`LOG_FORMAT=json` switches the formatter to JSON in any mode.
+
+### Startup banner (L06)
+
+On startup the server emits its banner as the opening log lines: the sanitized/redacted SearXNG URL and the build version, commit and date. This is emitted in both modes (in stdio it is written to the log file when logging is enabled).
+
+### Transport-agnostic access log (L08)
+
+Every `tools/call` emits one INFO-level access-log line regardless of transport (via `WrapAccessLog`, composed at registration time). The line carries:
+
+- `tool` — the hardcoded tool name
+- `args` — the sanitized and bounded (≤ 512 chars) serialized tool input
+- `source` — the transport label (`http` or `stdio`)
+- `duration` — handler execution time
+- `outcome` — `success` or `error` (plus a sanitized `error` field on failure)
+
+When the logger is not enabled at INFO level the wrapper is a no-op beyond a cheap level check, so a disabled logger costs nothing.
+
+## Metrics & Observability (O01 / O04 / N32)
+
+In **both** modes the server binds an internal observability listener on **`INTERNAL_ADDR`** (default `:8081`):
+
+- **`GET /metrics`** — Prometheus metrics (Go runtime via `collectors.NewGoCollector()` plus custom MCP metrics). Served on the internal listener in both modes.
+- **`GET /healthz`** — liveness probe returning `{"status":"ok"}`. In **stdio** mode it is served on the internal listener (there is no main HTTP listener); in **HTTP** mode it is served on the main HTTP listener (`LISTEN_ADDR`), bypassing all middleware.
+
+The internal listener has **no built-in authentication** — restrict it to the network in production.
+
+> **Deprecation:** the legacy `PROMETHEUS_METRICS_ADDR` env var is **deprecated**. It is honored only when `INTERNAL_ADDR` is unset; `INTERNAL_ADDR` wins whenever both are present.
+
+Custom Prometheus metrics:
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `mcp_tool_requests_total` | Counter | `{tool, status_class}` | Per-tool request count (tool names are hardcoded at registration) |
+| `mcp_tool_duration_seconds` | Histogram | `{tool}` | Per-tool request duration (DefBuckets: .005–10s) |
+| `mcp_active_requests` | Gauge | — | Current in-flight requests |
+
 ## Middleware Chain
 
-The server applies five middleware layers to every HTTP request before reaching the MCP Streamable HTTP handler, executed in this order (outermost first). The search service is injected directly into tool handlers at registration time (via `RegisterTools`), so no service-injection middleware is needed.
+The five-layer HTTP middleware chain described below applies **only in `-mode http`**. The server applies these layers to every HTTP request before reaching the MCP Streamable HTTP handler, executed in this order (outermost first). In **stdio** mode there is no HTTP middleware and no rate limiting (the process is local and trusted). The search service is injected directly into tool handlers at registration time (via `RegisterToolsWithSource`), so no service-injection middleware is needed.
 
 ### 1. RecoveryMiddleware (`handlers/middleware.go`)
 
@@ -258,14 +347,15 @@ Reads and buffers the request body to parse the JSON-RPC method name, validates 
 
 ## Security Considerations
 
-- The server has **no authentication** — it should be deployed behind TLS and network-level access controls in production.
-- Global (100 rps) and per-client (10 rps) rate limiting via `RateLimitMiddleware`.
-- Batch JSON-RPC requests are limited to 100 items per batch to prevent amplification attacks.
+- The server has **no built-in authentication** (no OAuth2). In **HTTP mode** it should be deployed behind TLS and network-level access controls in production (read-only search proxy); in **stdio mode** it is an OS-local process whose authorization is inherited from the OS user/environment.
+- Global (100 rps) and per-client (10 rps) rate limiting via `RateLimitMiddleware` — **HTTP mode only**.
+- Batch JSON-RPC requests are limited to 100 items per batch to prevent amplification attacks — **HTTP mode only**.
 - All log strings are sanitized — control characters are stripped to prevent log injection.
 - Credentials in the SearXNG URL are redacted before logging via `url.Redacted()`.
-- HTTP redirects are disabled (`CheckRedirect: http.ErrUseLastResponse`).
+- HTTP redirects are disabled (`RedirectNoPolicy`).
 - Response bodies from SearXNG are limited to 10 MB via `io.LimitReader`.
-- **Prometheus metrics** are exposed on a separate HTTP server (default `:8081`) with no built-in authentication.
+- **Prometheus metrics** are exposed on the internal listener (`INTERNAL_ADDR`, default `:8081`) with no built-in authentication — network-restrict in production.
+- In stdio mode logs are never written to stdout (protecting the JSON-RPC channel); when file logging is enabled the file is created with `0600` permissions.
 
 **Security-scanner findings policy (S5):**
 - Findings from security scanners (**gosec**, **govulncheck**) are **fixed, never suppressed**.
@@ -286,7 +376,7 @@ Reads and buffers the request body to parse the JSON-RPC method name, validates 
 - Image source URLs allow only `http`, `https`, and `data` schemes
 - See `sanitizeURL()` and `sanitizeImgSrc()` in `handlers/tools.go`.
 
-**Model Denial of Service (LLM04):**
+**Model Denial of Service (LLM04):** (HTTP-mode protections; stdio is local and trusted)
 - Request body limited to 1 MB (`BodyLimitMiddleware`)
 - Response body from SearXNG limited to 10 MB
 - Query length limited to 512 characters (`MaxQueryLength`)
@@ -375,7 +465,7 @@ gremlins unleash handlers application infrastructure/searxng config
 
 1. Define input/output types in `handlers/tools.go`
 2. Write the handler factory function in `handlers/tools.go`
-3. Register the tool via `RegisterTools()` in `handlers/registration.go` (pass the search service explicitly as a parameter)
+3. Register the tool via `RegisterToolsWithSource()` in `handlers/registration.go` (pass the search service explicitly and the transport `source` label)
 4. If a new domain entity is needed, define it in `domain/` and add a repository interface
 5. If a new service or dependency is needed, wire it in `Run()` (`cmd/server/main.go`) and pass it to `RegisterTools`
 

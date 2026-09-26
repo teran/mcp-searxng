@@ -25,17 +25,29 @@ This document describes the agents/assistants involved in the development and op
 
 | Package / File                              | Purpose                                         |
 |---------------------------------------------|-------------------------------------------------|
-| `cmd/server/main.go`                        | Entrypoint, HTTP server, middleware wiring      |
-| `config/config.go`                          | Configuration loading (`envconfig` + ozzo-validation) |
-| `handlers/middleware.go`                    | Body limit, logging, batch validation middleware |
-| `handlers/ratelimit.go`                     | Rate limiting middleware (global + per-client)  |
+| `cmd/server/main.go`                        | Entrypoint; launch-mode selection (`-mode`/`MODE`); binds HTTP + stdio servers (`runHTTP`/`runStdio`) and the internal observability listener |
+| `config/config.go`                          | Configuration loading (`envconfig` + ozzo-validation) — `MODE`, `INTERNAL_ADDR`, `LOG_LEVEL` (nil when unset) |
+| `logging/logging.go`                        | Mode-aware logrus logger construction (L02 enablement + L01 output channel per mode) |
+| `logging/slog.go`                           | `slog` adapter that forwards MCP SDK log events into logrus |
+| `handlers/middleware.go`                    | Body limit, logging, batch validation middleware (HTTP mode) |
+| `handlers/ratelimit.go`                     | Rate limiting middleware (global + per-client) — HTTP mode only |
 | `handlers/metrics.go`                       | Prometheus metrics collectors + middleware + `WrapToolHandler` |
+| `handlers/accesslog.go`                     | `WrapAccessLog` — transport-agnostic per-tool access log (L08) |
 | `handlers/tools.go`                         | MCP tool handler factories + I/O types          |
-| `handlers/registration.go`                  | Tool registration via `RegisterTools()`         |
+| `handlers/registration.go`                  | Tool registration via `RegisterToolsWithSource()` |
 | `application/service.go`                    | Business logic / use case layer                 |
 | `domain/`                                   | Domain models + repository interfaces (ports)   |
 | `infrastructure/searxng/client.go`          | SearXNG HTTP API client (adapters)             |
 | `infrastructure/searxng/models.go`          | JSON wire models + `toDomain()` conversion      |
+
+## Launch Modes & Logging Contract (L02)
+
+`mcp-searxng` is a **Hybrid** MCP server. One binary selects its transport at startup via the **`-mode http|stdio`** CLI flag or the **`MODE`** env var (flag wins); the default is **`stdio`**.
+
+- **`-mode http`** — Streamable HTTP transport on `LISTEN_ADDR` (default `:8080`); full middleware chain (recovery → metrics → rate limit → body limit → logging) + `GET /healthz`. Logging is **always enabled** at default level `info`, written to **stdout** (12-factor). Rate limiting and body limits apply here.
+- **`-mode stdio`** (default) — `mcp.StdioTransport`; **no** HTTP middleware and **no** rate limiting (local trusted process). Logging is enabled **only when `LOG_LEVEL` is set** and is written to the `LOG_FILENAME` file (chmod `0600`), **never** stdout — protecting the JSON-RPC stdio channel. If stdio logging is enabled but `LOG_FILENAME` is empty, output is discarded.
+
+Config env-var changes to keep in mind: **`MODE`** selects the launch mode; **`INTERNAL_ADDR`** (default `:8081`) replaced the deprecated **`PROMETHEUS_METRICS_ADDR`** (honored only when `INTERNAL_ADDR` is unset); **`LOG_LEVEL`** is now `nil` when unset (no longer defaults to `info`).
 
 ## Tool-to-Agent Mapping
 
@@ -49,7 +61,7 @@ This document describes the agents/assistants involved in the development and op
 
 ## Metrics
 
-The server exposes Prometheus metrics on a separate HTTP server (default port `:8081`, configurable via `PROMETHEUS_METRICS_ADDR`):
+The server exposes Prometheus metrics on an internal observability listener (**`INTERNAL_ADDR`**, default `:8081`, bound in both modes; legacy `PROMETHEUS_METRICS_ADDR` honored only when `INTERNAL_ADDR` is unset):
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|

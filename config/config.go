@@ -5,6 +5,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"time"
 
 	validation "github.com/go-ozzo/ozzo-validation/v4"
@@ -15,15 +16,23 @@ import (
 
 // Config represents the application configuration loaded from environment variables.
 type Config struct {
-	SearXNGURL            string        `envconfig:"SEARXNG_URL" required:"true"`
-	ListenAddr            string        `envconfig:"LISTEN_ADDR" default:":8080"`
-	PrometheusMetricsAddr string        `envconfig:"PROMETHEUS_METRICS_ADDR" default:":8081"`
-	RateLimitGlobal       int           `envconfig:"RATE_LIMIT_GLOBAL" default:"100"`
-	RateLimitPerClient    int           `envconfig:"RATE_LIMIT_PER_CLIENT" default:"10"`
-	WriteTimeout          time.Duration `envconfig:"WRITE_TIMEOUT" default:"60s"`
-	LogLevel              string        `envconfig:"LOG_LEVEL" default:"info"`
-	LogFormat             string        `envconfig:"LOG_FORMAT" default:"text"`
-	LogFilename           string        `envconfig:"LOG_FILENAME" default:""`
+	SearXNGURL         string        `envconfig:"SEARXNG_URL" required:"true"`
+	ListenAddr         string        `envconfig:"LISTEN_ADDR" default:":8080"`
+	InternalAddr       string        `envconfig:"INTERNAL_ADDR" default:":8081"`
+	RateLimitGlobal    int           `envconfig:"RATE_LIMIT_GLOBAL" default:"100"`
+	RateLimitPerClient int           `envconfig:"RATE_LIMIT_PER_CLIENT" default:"10"`
+	WriteTimeout       time.Duration `envconfig:"WRITE_TIMEOUT" default:"60s"`
+	Mode               string        `envconfig:"MODE" default:"stdio"`
+	LogLevel           *string       `envconfig:"LOG_LEVEL"`
+	LogFormat          string        `envconfig:"LOG_FORMAT" default:"text"`
+	LogFilename        string        `envconfig:"LOG_FILENAME" default:""`
+}
+
+// Validate performs semantic validation on the configuration. It is exported
+// so callers that override a field after Load (e.g. the -mode flag) can
+// re-validate the resulting configuration.
+func (c Config) Validate() error {
+	return c.validate()
 }
 
 // validate performs semantic validation on the loaded configuration.
@@ -37,17 +46,34 @@ func (c Config) validate() error {
 		validation.Field(&c.RateLimitGlobal, validation.By(validatePositiveInt)),
 		validation.Field(&c.RateLimitPerClient, validation.By(validatePositiveInt)),
 		validation.Field(&c.WriteTimeout, validation.Min(time.Duration(0))),
+		validation.Field(&c.Mode, validation.By(validateMode)),
 		validation.Field(&c.LogLevel, validation.By(validateLogLevel)),
 		validation.Field(&c.LogFormat, validation.By(validateLogFormat)),
 	)
 }
 
-func validateLogLevel(value interface{}) error {
+func validateMode(value interface{}) error {
 	s, ok := value.(string)
 	if !ok {
 		return fmt.Errorf("must be a string")
 	}
-	if _, err := logging.ParseLevel(s); err != nil {
+	if s != "http" && s != "stdio" {
+		return fmt.Errorf("must be either \"http\" or \"stdio\" (got %q)", s)
+	}
+	return nil
+}
+
+// validateLogLevel accepts a nil *string (LOG_LEVEL unset) as valid and only
+// validates the value when it is non-nil.
+func validateLogLevel(value interface{}) error {
+	s, ok := value.(*string)
+	if !ok {
+		return fmt.Errorf("must be a string")
+	}
+	if s == nil {
+		return nil
+	}
+	if _, err := logging.ParseLevel(*s); err != nil {
 		return err
 	}
 	return nil
@@ -97,12 +123,27 @@ func validateURLHost(value interface{}) error {
 	return nil
 }
 
+// legacyMetricsAddr is the previous environment variable name for the internal
+// observability listener address. It is honoured only when INTERNAL_ADDR is not
+// explicitly set, so the new variable wins whenever both are present.
+const legacyMetricsAddr = "PROMETHEUS_METRICS_ADDR"
+
 // Load reads configuration from environment variables and validates it.
 // Returns the parsed Config or an error.
 func Load() (*Config, error) {
 	var cfg Config
 	if err := envconfig.Process("", &cfg); err != nil {
 		return nil, fmt.Errorf("config: %w", err)
+	}
+
+	// Legacy shim: PROMETHEUS_METRICS_ADDR predates INTERNAL_ADDR. envconfig has
+	// no aliasing support, so translate the legacy variable manually — but only
+	// when INTERNAL_ADDR was not explicitly provided, letting INTERNAL_ADDR win
+	// whenever both are set.
+	if os.Getenv("INTERNAL_ADDR") == "" {
+		if legacy := os.Getenv(legacyMetricsAddr); legacy != "" {
+			cfg.InternalAddr = legacy
+		}
 	}
 
 	if err := cfg.validate(); err != nil {

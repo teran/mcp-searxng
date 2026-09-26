@@ -3,6 +3,7 @@ package logging
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,7 +99,7 @@ func TestParseFormat(t *testing.T) {
 
 func TestNew(t *testing.T) {
 	t.Run("defaults to stdout with text and info level", func(t *testing.T) {
-		logger, err := New("info", "text", "")
+		logger, err := NewString("info", "text", "")
 		if err != nil {
 			t.Fatalf("New() returned error: %v", err)
 		}
@@ -114,7 +115,7 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("json format emits valid JSON", func(t *testing.T) {
-		logger, err := New("info", "json", "")
+		logger, err := NewString("info", "json", "")
 		if err != nil {
 			t.Fatalf("New() returned error: %v", err)
 		}
@@ -136,19 +137,19 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("invalid level returns error", func(t *testing.T) {
-		if _, err := New("verbose", "text", ""); err == nil {
+		if _, err := NewString("verbose", "text", ""); err == nil {
 			t.Error("New() expected error for invalid level, got nil")
 		}
 	})
 
 	t.Run("invalid format returns error", func(t *testing.T) {
-		if _, err := New("info", "xml", ""); err == nil {
+		if _, err := NewString("info", "xml", ""); err == nil {
 			t.Error("New() expected error for invalid format, got nil")
 		}
 	})
 
 	t.Run("unwritable file path returns error", func(t *testing.T) {
-		if _, err := New("info", "text", "/nonexistent-dir-xyz/server.log"); err == nil {
+		if _, err := NewString("info", "text", "/nonexistent-dir-xyz/server.log"); err == nil {
 			t.Error("New() expected error for unwritable file path, got nil")
 		}
 	})
@@ -159,7 +160,7 @@ func TestNew_FileOutput(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "server.log")
 
-		logger, err := New("info", "json", path)
+		logger, err := NewString("info", "json", path)
 		if err != nil {
 			t.Fatalf("New() returned error: %v", err)
 		}
@@ -179,7 +180,7 @@ func TestNew_FileOutput(t *testing.T) {
 		dir := t.TempDir()
 		path := filepath.Join(dir, "server.log")
 
-		if _, err := New("info", "text", path); err != nil {
+		if _, err := NewString("info", "text", path); err != nil {
 			t.Fatalf("New() returned error: %v", err)
 		}
 
@@ -189,6 +190,125 @@ func TestNew_FileOutput(t *testing.T) {
 		}
 		if perm := info.Mode().Perm(); perm != 0o600 {
 			t.Errorf("file permissions = %o, want 600", perm)
+		}
+	})
+}
+
+func TestNewOptions(t *testing.T) { //nolint:gocognit
+	t.Run("http is always enabled and writes to stdout", func(t *testing.T) {
+		logger, err := New(Options{Mode: "http"})
+		if err != nil {
+			t.Fatalf("New() returned error: %v", err)
+		}
+		if logger.Level != logrus.InfoLevel {
+			t.Errorf("logger.Level = %v, want info (http default)", logger.Level)
+		}
+		if logger.Out != os.Stdout {
+			t.Errorf("logger.Out = %v, want os.Stdout", logger.Out)
+		}
+		if !logger.IsLevelEnabled(logrus.InfoLevel) {
+			t.Error("http logger should be enabled at info level")
+		}
+	})
+
+	t.Run("http with explicit level", func(t *testing.T) {
+		lvl := "debug"
+		logger, err := New(Options{Mode: "http", Level: &lvl})
+		if err != nil {
+			t.Fatalf("New() returned error: %v", err)
+		}
+		if logger.Level != logrus.DebugLevel {
+			t.Errorf("logger.Level = %v, want debug", logger.Level)
+		}
+	})
+
+	t.Run("stdio with unset level is disabled and discards", func(t *testing.T) {
+		logger, err := New(Options{Mode: "stdio"})
+		if err != nil {
+			t.Fatalf("New() returned error: %v", err)
+		}
+		if logger.Level != logrus.PanicLevel {
+			t.Errorf("logger.Level = %v, want panic (disabled)", logger.Level)
+		}
+		if logger.Out != io.Discard {
+			t.Errorf("logger.Out = %v, want io.Discard", logger.Out)
+		}
+		if logger.IsLevelEnabled(logrus.InfoLevel) {
+			t.Error("disabled logger should not be enabled at info level")
+		}
+	})
+
+	t.Run("stdio with explicit level writes to file", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "server.log")
+		lvl := "debug"
+
+		logger, err := New(Options{Mode: "stdio", Level: &lvl, Filename: path})
+		if err != nil {
+			t.Fatalf("New() returned error: %v", err)
+		}
+		logger.Debugf("written to file")
+
+		// #nosec G304 -- path points to a file created by this test in t.TempDir().
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile: %v", err)
+		}
+		if !strings.Contains(string(data), "written to file") {
+			t.Errorf("log file does not contain message: %q", string(data))
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("Stat: %v", err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("file permissions = %o, want 600", perm)
+		}
+	})
+
+	t.Run("enabled stdio with empty filename discards", func(t *testing.T) {
+		lvl := "info"
+		logger, err := New(Options{Mode: "stdio", Level: &lvl})
+		if err != nil {
+			t.Fatalf("New() returned error: %v", err)
+		}
+		if logger.Level != logrus.InfoLevel {
+			t.Errorf("logger.Level = %v, want info", logger.Level)
+		}
+		if logger.Out != io.Discard {
+			t.Errorf("logger.Out = %v, want io.Discard (never stdout for stdio)", logger.Out)
+		}
+	})
+
+	t.Run("http with filename routes to file, not stdout", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "server.log")
+
+		logger, err := New(Options{Mode: "http", Filename: path})
+		if err != nil {
+			t.Fatalf("New() returned error: %v", err)
+		}
+		if logger.Out == os.Stdout {
+			t.Error("logger.Out should be the file, not stdout")
+		}
+	})
+
+	t.Run("invalid format returns error", func(t *testing.T) {
+		if _, err := New(Options{Mode: "http", Format: "xml"}); err == nil {
+			t.Error("New() expected error for invalid format, got nil")
+		}
+	})
+
+	t.Run("invalid explicit level returns error", func(t *testing.T) {
+		lvl := "verbose"
+		if _, err := New(Options{Mode: "http", Level: &lvl}); err == nil {
+			t.Error("New() expected error for invalid level, got nil")
+		}
+	})
+
+	t.Run("unwritable file path returns error", func(t *testing.T) {
+		if _, err := New(Options{Mode: "http", Filename: "/nonexistent-dir-xyz/server.log"}); err == nil {
+			t.Error("New() expected error for unwritable file path, got nil")
 		}
 	})
 }

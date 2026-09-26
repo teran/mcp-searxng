@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
 
 	"github.com/teran/mcp-searxng/config"
@@ -130,12 +131,12 @@ func shutdownViaSignal(t *testing.T, sig os.Signal) {
 
 func newTestConfig(mainLn, metricsLn net.Listener) config.Config {
 	return config.Config{
-		ListenAddr:            mainLn.Addr().String(),
-		PrometheusMetricsAddr: metricsLn.Addr().String(),
-		SearXNGURL:            "http://localhost:9999",
-		RateLimitGlobal:       100,
-		RateLimitPerClient:    10,
-		WriteTimeout:          5 * time.Second,
+		ListenAddr:         mainLn.Addr().String(),
+		InternalAddr:       metricsLn.Addr().String(),
+		SearXNGURL:         "http://localhost:9999",
+		RateLimitGlobal:    100,
+		RateLimitPerClient: 10,
+		WriteTimeout:       5 * time.Second,
 	}
 }
 
@@ -150,7 +151,7 @@ func TestRun_HealthEndpoint(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(ctx, cfg, testLogger(), mainLn, metricsLn)
+		errCh <- runHTTP(ctx, cfg, testLogger(), mainLn, metricsLn)
 	}()
 
 	waitForServer(t, "http://"+mainLn.Addr().String()+"/healthz", 3*time.Second)
@@ -199,7 +200,7 @@ func TestRun_MCPHandlerPing(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(ctx, cfg, testLogger(), mainLn, metricsLn)
+		errCh <- runHTTP(ctx, cfg, testLogger(), mainLn, metricsLn)
 	}()
 
 	addr := mainLn.Addr().String()
@@ -300,7 +301,7 @@ func TestRun_ShutdownViaContext(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(ctx, cfg, testLogger(), mainLn, metricsLn)
+		errCh <- runHTTP(ctx, cfg, testLogger(), mainLn, metricsLn)
 	}()
 
 	// Wait for server to be ready before cancelling.
@@ -332,7 +333,7 @@ func TestRun_ShutdownBeforeReady(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- run(ctx, cfg, testLogger(), mainLn, metricsLn)
+		errCh <- runHTTP(ctx, cfg, testLogger(), mainLn, metricsLn)
 	}()
 
 	select {
@@ -349,12 +350,12 @@ func TestRun_ServerStartError(t *testing.T) {
 	// Both addresses are invalid — the main listener bind fails first and Run
 	// returns a bind error (fail fast, no goroutine needed).
 	cfg := config.Config{
-		ListenAddr:            "127.0.0.1:-1", // invalid port — net.Listen fails immediately
-		PrometheusMetricsAddr: "127.0.0.1:-1",
-		SearXNGURL:            "http://localhost:9999",
-		RateLimitGlobal:       100,
-		RateLimitPerClient:    10,
-		WriteTimeout:          5 * time.Second,
+		ListenAddr:         "127.0.0.1:-1", // invalid port — net.Listen fails immediately
+		InternalAddr:       "127.0.0.1:-1",
+		SearXNGURL:         "http://localhost:9999",
+		RateLimitGlobal:    100,
+		RateLimitPerClient: 10,
+		WriteTimeout:       5 * time.Second,
 	}
 
 	if err := Run(cfg, testLogger()); err == nil {
@@ -364,12 +365,12 @@ func TestRun_ServerStartError(t *testing.T) {
 
 func TestRun_MetricsServerStartError(t *testing.T) {
 	cfg := config.Config{
-		ListenAddr:            freePort(t),    // valid — main bind succeeds
-		PrometheusMetricsAddr: "127.0.0.1:-1", // invalid — metrics bind fails
-		SearXNGURL:            "http://localhost:9999",
-		RateLimitGlobal:       100,
-		RateLimitPerClient:    10,
-		WriteTimeout:          5 * time.Second,
+		ListenAddr:         freePort(t),    // valid — main bind succeeds
+		InternalAddr:       "127.0.0.1:-1", // invalid — metrics bind fails
+		SearXNGURL:         "http://localhost:9999",
+		RateLimitGlobal:    100,
+		RateLimitPerClient: 10,
+		WriteTimeout:       5 * time.Second,
 	}
 
 	// Whether the main port is grabbed (TOCTOU) or the metrics bind fails, Run
@@ -383,12 +384,12 @@ func TestRun_WithMetricsPortSameAsMain(t *testing.T) {
 	addr := freePort(t)
 
 	cfg := config.Config{
-		ListenAddr:            addr,
-		PrometheusMetricsAddr: addr, // same address — metrics bind fails
-		SearXNGURL:            "http://localhost:9999",
-		RateLimitGlobal:       100,
-		RateLimitPerClient:    10,
-		WriteTimeout:          5 * time.Second,
+		ListenAddr:         addr,
+		InternalAddr:       addr, // same address — metrics bind fails
+		SearXNGURL:         "http://localhost:9999",
+		RateLimitGlobal:    100,
+		RateLimitPerClient: 10,
+		WriteTimeout:       5 * time.Second,
 	}
 
 	if err := Run(cfg, testLogger()); err == nil {
@@ -406,12 +407,12 @@ func TestRun_Success(t *testing.T) {
 		metricsAddr := freePort(t)
 
 		cfg := config.Config{
-			ListenAddr:            addr,
-			PrometheusMetricsAddr: metricsAddr,
-			SearXNGURL:            "http://localhost:9999",
-			RateLimitGlobal:       100,
-			RateLimitPerClient:    10,
-			WriteTimeout:          5 * time.Second,
+			ListenAddr:         addr,
+			InternalAddr:       metricsAddr,
+			SearXNGURL:         "http://localhost:9999",
+			RateLimitGlobal:    100,
+			RateLimitPerClient: 10,
+			WriteTimeout:       5 * time.Second,
 		}
 
 		errCh := make(chan error, 1)
@@ -444,4 +445,112 @@ func TestRun_Success(t *testing.T) {
 		return // success
 	}
 	t.Fatal("Run success path not reproducible after 5 attempts")
+}
+
+// newStdioTestConfig returns a config for exercising the stdio transport path.
+func newStdioTestConfig(metricsLn net.Listener) config.Config {
+	return config.Config{
+		Mode:               "stdio",
+		InternalAddr:       metricsLn.Addr().String(),
+		SearXNGURL:         "http://localhost:9999",
+		RateLimitGlobal:    100,
+		RateLimitPerClient: 10,
+		WriteTimeout:       5 * time.Second,
+	}
+}
+
+func TestRunStdio_RoundTrip(t *testing.T) {
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	metricsLn := mustListen(t)
+
+	cfg := newStdioTestConfig(metricsLn)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runStdio(ctx, cfg, testLogger(), metricsLn, serverTransport)
+	}()
+
+	// Wait for the internal observability server to be ready.
+	waitForServer(t, "http://"+metricsLn.Addr().String()+"/healthz", 3*time.Second)
+
+	// Connect a client over the other half of the in-memory transport pair. The
+	// stdio server must connect first (client initializes the session), so use
+	// a bounded timeout and retry.
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v1.0.0"}, nil)
+
+	var session *mcp.ClientSession
+	var err error
+	for range 20 {
+		connectCtx, cancelConnect := context.WithTimeout(t.Context(), time.Second)
+		session, err = client.Connect(connectCtx, clientTransport, nil)
+		cancelConnect()
+		if err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+
+	// Drive a tools/call. The backend (localhost:9999) is unreachable, so the
+	// search is expected to fail — this still exercises the full stdio
+	// round-trip including the access-log wrapper. The SDK surfaces handler
+	// errors as an IsError CallToolResult rather than a Go error.
+	res, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "search",
+		Arguments: map[string]any{"query": "hello"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned unexpected error: %v", err)
+	}
+	if res == nil || !res.IsError {
+		t.Errorf("expected search to fail (IsError) with unreachable backend, got %#v", res)
+	}
+
+	// Close the client session; the server session ends and Run returns nil.
+	if err := session.Close(); err != nil {
+		t.Fatalf("session.Close: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Errorf("runStdio returned unexpected error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for runStdio to return after session close")
+	}
+}
+
+func TestRunStdio_PreCancelledCtx(t *testing.T) {
+	serverTransport, _ := mcp.NewInMemoryTransports()
+	metricsLn := mustListen(t)
+
+	cfg := newStdioTestConfig(metricsLn)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := runStdio(ctx, cfg, testLogger(), metricsLn, serverTransport); err != nil {
+		t.Errorf("runStdio with pre-cancelled ctx = %v, want nil", err)
+	}
+}
+
+func TestRun_StdioBindError(t *testing.T) {
+	cfg := config.Config{
+		Mode:               "stdio",
+		InternalAddr:       "127.0.0.1:-1", // invalid — observability bind fails
+		SearXNGURL:         "http://localhost:9999",
+		RateLimitGlobal:    100,
+		RateLimitPerClient: 10,
+		WriteTimeout:       5 * time.Second,
+	}
+
+	if err := Run(cfg, testLogger()); err == nil {
+		t.Fatal("expected Run to return an error for an invalid internal address")
+	}
 }

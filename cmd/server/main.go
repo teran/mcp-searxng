@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"net"
 	"net/http"
@@ -32,13 +33,30 @@ var (
 )
 
 func main() {
+	modeFlag := flag.String("mode", "", "launch mode: http|stdio (default stdio)")
+	flag.Parse()
+
 	cfg, err := config.Load()
 	if err != nil {
 		// Logger is not configured yet — use logrus defaults.
 		logrus.Fatalf("Failed to load configuration: %v", err)
 	}
 
-	logger, err := logging.New(cfg.LogLevel, cfg.LogFormat, cfg.LogFilename)
+	// The -mode flag overrides MODE; re-validate since it can introduce an
+	// invalid value that config.Load did not see.
+	if *modeFlag != "" {
+		cfg.Mode = *modeFlag
+	}
+	if err := cfg.Validate(); err != nil {
+		logrus.Fatalf("Invalid configuration: %v", err)
+	}
+
+	logger, err := logging.New(logging.Options{
+		Mode:     cfg.Mode,
+		Level:    cfg.LogLevel,
+		Format:   cfg.LogFormat,
+		Filename: cfg.LogFilename,
+	})
 	if err != nil {
 		// Logger failed to initialize (e.g. cannot open LOG_FILENAME) — use
 		// logrus defaults since we have no usable logger.
@@ -50,22 +68,16 @@ func main() {
 	}
 }
 
-// Run binds the main and metrics listeners from cfg and starts the MCP HTTP
-// server, metrics server, waiting for a signal (SIGTERM/SIGINT) or server
-// error to trigger graceful shutdown. It returns an error only if a listener
-// cannot be bound (fail fast), or on successful shutdown returns nil.
+// Run binds the listeners required by the configured mode and starts the
+// server, waiting for a signal (SIGTERM/SIGINT) or server error to trigger
+// graceful shutdown. It returns an error only if a listener cannot be bound
+// (fail fast), or on successful shutdown returns nil.
 func Run(cfg config.Config, logger *logrus.Logger) error {
 	bindCtx := context.Background()
 
-	mainLn, err := (&net.ListenConfig{}).Listen(bindCtx, "tcp", cfg.ListenAddr)
+	metricsLn, err := bindObservability(bindCtx, cfg, logger)
 	if err != nil {
-		return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
-	}
-	defer func() { _ = mainLn.Close() }()
-
-	metricsLn, err := (&net.ListenConfig{}).Listen(bindCtx, "tcp", cfg.PrometheusMetricsAddr)
-	if err != nil {
-		return fmt.Errorf("listen on %s: %w", cfg.PrometheusMetricsAddr, err)
+		return err
 	}
 	defer func() { _ = metricsLn.Close() }()
 
@@ -75,18 +87,44 @@ func Run(cfg config.Config, logger *logrus.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	return run(ctx, cfg, logger, mainLn, metricsLn)
+	switch cfg.Mode {
+	case "stdio":
+		return runStdio(ctx, cfg, logger, metricsLn, &mcp.StdioTransport{})
+	default: // "http"
+		mainLn, err := (&net.ListenConfig{}).Listen(bindCtx, "tcp", cfg.ListenAddr)
+		if err != nil {
+			return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
+		}
+		defer func() { _ = mainLn.Close() }()
+		return runHTTP(ctx, cfg, logger, mainLn, metricsLn)
+	}
 }
 
-// run starts the MCP HTTP server and metrics server on the provided
-// pre-bound listeners and waits for ctx cancellation or a server error to
-// trigger graceful shutdown. It returns nil on successful shutdown.
-//
-// Accepting pre-bound listeners (instead of binding by address) is what
-// eliminates the free-port-then-rebind TOCTOU race in tests: the caller binds
-// a listener exactly once and hands ownership to the server. Using ctx (rather
-// than a raw OS signal) makes shutdown deterministic and testable.
-func run(ctx context.Context, cfg config.Config, logger *logrus.Logger, mainLn, metricsLn net.Listener) error {
+// bindObservability binds the internal observability listener (metrics +
+// healthz) on cfg.InternalAddr. It is shared by both transports.
+func bindObservability(ctx context.Context, cfg config.Config, logger *logrus.Logger) (net.Listener, error) {
+	l, err := (&net.ListenConfig{}).Listen(ctx, "tcp", cfg.InternalAddr)
+	if err != nil {
+		return nil, fmt.Errorf("listen on %s: %w", cfg.InternalAddr, err)
+	}
+	logger.Infof("Internal observability listener bound on %s", handlers.SanitizeLog(l.Addr().String()))
+	return l, nil
+}
+
+// serverDeps holds the shared dependencies constructed once and used by both
+// the HTTP and stdio transports.
+type serverDeps struct {
+	srv          *mcp.Server
+	promRegistry *prometheus.Registry
+	metrics      *handlers.Metrics
+	close        func()
+}
+
+// buildServer constructs the shared dependencies: the resty HTTP client, the
+// SearXNG client, the search service, the MCP server, the Prometheus registry
+// and metrics, and registers all tools (metrics + access-log wrapped). The
+// source label distinguishes the transport for the L08 access log.
+func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serverDeps, error) {
 	// sharedRestyClient is reused across requests for connection pooling.
 	// RedirectNoPolicy disables redirects to prevent credential forwarding (the
 	// resty client never follows redirects), and the explicit 30s timeout bounds
@@ -98,7 +136,6 @@ func run(ctx context.Context, cfg config.Config, logger *logrus.Logger, mainLn, 
 	}).
 		SetTimeout(30 * time.Second).
 		SetRedirectPolicy(resty.RedirectNoPolicy())
-	defer func() { _ = sharedRestyClient.Close() }()
 
 	// Create the SearXNG client and search service (shared across all requests).
 	searxngClient := infra.NewClient(cfg.SearXNGURL, sharedRestyClient)
@@ -109,6 +146,7 @@ func run(ctx context.Context, cfg config.Config, logger *logrus.Logger, mainLn, 
 		Name:    "mcp-searxng",
 		Version: version,
 	}, &mcp.ServerOptions{
+		Logger: logging.Slog(logger),
 		Capabilities: &mcp.ServerCapabilities{
 			Tools: &mcp.ToolCapabilities{ListChanged: false},
 		},
@@ -119,7 +157,107 @@ func run(ctx context.Context, cfg config.Config, logger *logrus.Logger, mainLn, 
 	metrics := handlers.NewMetrics(promRegistry)
 
 	// Register tools via handler factories (service injected explicitly — no context lookup).
-	handlers.RegisterTools(srv, metrics, logger, searchSvc)
+	handlers.RegisterToolsWithSource(srv, metrics, logger, searchSvc, source)
+
+	return &serverDeps{
+		srv:          srv,
+		promRegistry: promRegistry,
+		metrics:      metrics,
+		close:        func() { _ = sharedRestyClient.Close() },
+	}, nil
+}
+
+// healthzHandler reports service liveness. It bypasses all middleware.
+func healthzHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
+}
+
+// logStartupBanner writes the startup banner (L06) — the first log lines that
+// identify the service, its version and its upstream. Shared by both transports.
+func logStartupBanner(logger *logrus.Logger, cfg config.Config) {
+	u, _ := url.Parse(cfg.SearXNGURL)
+	logger.Infof("SearXNG URL: %s", handlers.SanitizeLog(u.Redacted()))
+	logger.Infof("Version: %s, commit: %s, built: %s", version, commit, date)
+}
+
+// runStdio starts the MCP server on the provided transport (typically
+// &mcp.StdioTransport{}) and the observability/metrics server on the provided
+// pre-bound internal listener, then waits for ctx cancellation or a transport
+// error. On ctx cancellation Run returns nil (treating ctx.Err() as expected
+// termination), mirroring the HTTP path. The transport is injectable so tests
+// can drive an in-memory round-trip.
+func runStdio(ctx context.Context, cfg config.Config, logger *logrus.Logger, metricsLn net.Listener, transport mcp.Transport) error {
+	deps, err := buildServer(cfg, logger, "stdio")
+	if err != nil {
+		return err
+	}
+	defer deps.close()
+
+	// Startup banner first so it is the opening log line (L06).
+	logStartupBanner(logger, cfg)
+
+	// Internal observability server (metrics + healthz) — O01.
+	metricsHandler := handlers.RegisterMetricsOnRegistry(deps.promRegistry)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("GET /metrics", metricsHandler)
+	metricsMux.HandleFunc("GET /healthz", healthzHandler)
+
+	metricsServer := &http.Server{
+		Addr:              cfg.InternalAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	// Channel to capture server errors (buffered to hold one).
+	errCh := make(chan error, 1)
+
+	go func() {
+		logger.Infof("Starting internal observability server on %s", handlers.SanitizeLog(metricsLn.Addr().String()))
+		if err := metricsServer.Serve(metricsLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+		}
+	}()
+
+	// Run the MCP server on the transport until ctx is cancelled or the
+	// session ends. In stdio there is no rate limiter and no HTTP middleware.
+	runErr := deps.srv.Run(ctx, transport)
+
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		logger.Errorf("Internal server shutdown error: %v", err)
+	}
+
+	// A cancelled context is expected termination, not an error.
+	if ctx.Err() != nil {
+		logger.Info("Server stopped gracefully")
+		return nil
+	}
+	return runErr
+}
+
+// runHTTP starts the MCP HTTP server and observability server on the provided
+// pre-bound listeners and waits for ctx cancellation or a server error to
+// trigger graceful shutdown. It returns nil on successful shutdown.
+//
+// Accepting pre-bound listeners (instead of binding by address) is what
+// eliminates the free-port-then-rebind TOCTOU race in tests: the caller binds
+// a listener exactly once and hands ownership to the server. Using ctx (rather
+// than a raw OS signal) makes shutdown deterministic and testable.
+func runHTTP(ctx context.Context, cfg config.Config, logger *logrus.Logger, mainLn, metricsLn net.Listener) error {
+	deps, err := buildServer(cfg, logger, "http")
+	if err != nil {
+		return err
+	}
+	defer deps.close()
+
+	srv := deps.srv
+	promRegistry := deps.promRegistry
+	metrics := deps.metrics
 
 	// Create the Streamable HTTP handler.
 	mcpHandler := mcp.NewStreamableHTTPHandler(
@@ -151,16 +289,10 @@ func run(ctx context.Context, cfg config.Config, logger *logrus.Logger, mainLn, 
 
 	// Health-check endpoint — bypasses all middleware (auth, rate limit, etc.)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	mux.HandleFunc("GET /healthz", healthzHandler)
 	mux.Handle("/", handler)
 
-	u, _ := url.Parse(cfg.SearXNGURL)
-	logger.Infof("SearXNG URL: %s", handlers.SanitizeLog(u.Redacted()))
-	logger.Infof("Version: %s, commit: %s, built: %s", version, commit, date)
+	logStartupBanner(logger, cfg)
 
 	// ---- Main MCP HTTP server ----
 	mainServer := &http.Server{
@@ -178,7 +310,7 @@ func run(ctx context.Context, cfg config.Config, logger *logrus.Logger, mainLn, 
 	metricsMux.Handle("GET /metrics", metricsHandler)
 
 	metricsServer := &http.Server{
-		Addr:              cfg.PrometheusMetricsAddr,
+		Addr:              cfg.InternalAddr,
 		Handler:           metricsMux,
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      30 * time.Second,
