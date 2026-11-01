@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -537,6 +538,91 @@ func TestRunStdio_PreCancelledCtx(t *testing.T) {
 
 	if err := runStdio(ctx, cfg, testLogger(), metricsLn, serverTransport); err != nil {
 		t.Errorf("runStdio with pre-cancelled ctx = %v, want nil", err)
+	}
+}
+
+// TestRunStdio_OutboundUserAgent verifies that the shared resty client sets an
+// identifying User-Agent on every outbound request to SearXNG (conformance
+// criteria N44/M10). The header must never be empty/malformed: the package
+// `version` var defaults to "dev", so the value is always non-empty.
+func TestRunStdio_OutboundUserAgent(t *testing.T) {
+	var gotUA string
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"query":   "hello",
+			"results": []any{},
+		})
+	}))
+	defer backend.Close()
+
+	serverTransport, clientTransport := mcp.NewInMemoryTransports()
+	metricsLn := mustListen(t)
+
+	cfg := newStdioTestConfig(metricsLn)
+	cfg.SearXNGURL = backend.URL
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runStdio(ctx, cfg, testLogger(), metricsLn, serverTransport)
+	}()
+
+	// Wait for the internal observability server to be ready.
+	waitForServer(t, "http://"+metricsLn.Addr().String()+"/healthz", 3*time.Second)
+
+	// Connect a client over the other half of the in-memory transport pair. The
+	// stdio server must connect first (client initializes the session), so use
+	// a bounded timeout and retry.
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v1.0.0"}, nil)
+
+	var session *mcp.ClientSession
+	var err error
+	for range 20 {
+		connectCtx, cancelConnect := context.WithTimeout(t.Context(), time.Second)
+		session, err = client.Connect(connectCtx, clientTransport, nil)
+		cancelConnect()
+		if err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+
+	// Drive a successful search against the recording backend.
+	res, err := session.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "search",
+		Arguments: map[string]any{"query": "hello"},
+	})
+	if err != nil {
+		t.Fatalf("CallTool returned unexpected error: %v", err)
+	}
+	if res == nil || res.IsError {
+		t.Fatalf("expected search to succeed, got %#v", res)
+	}
+
+	wantUA := fmt.Sprintf("mcp-searxng/%s (https://github.com/teran/mcp-searxng)", version)
+	if gotUA != wantUA {
+		t.Errorf("User-Agent = %q, want %q", gotUA, wantUA)
+	}
+
+	// Close the client session; the server session ends and Run returns nil.
+	if err := session.Close(); err != nil {
+		t.Fatalf("session.Close: %v", err)
+	}
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Errorf("runStdio returned unexpected error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for runStdio to return after session close")
 	}
 }
 
