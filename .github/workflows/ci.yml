@@ -21,12 +21,12 @@ jobs:
           cache: true
 
       # Lint + gosec via the official golangci-lint action (findings must be
-      # FIXED). Pinned to the local toolchain version (v2.13.2) so the v2 config
+      # FIXED). Pinned to the local toolchain version (v2.15.0) so the v2 config
       # schema cannot drift between CI and local runs.
       - name: Lint (golangci-lint)
         uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.13.2
+          version: v2.15.0
           args: --config .golangci.yml
 
       # govulncheck — dependency-graph vulnerability scan; findings must be FIXED.
