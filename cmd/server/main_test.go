@@ -427,7 +427,8 @@ func TestRun_Success(t *testing.T) {
 			// Server never came up — likely a transient ephemeral-port conflict
 			// that made Run return a bind error. Drain and retry.
 			select {
-			case <-errCh:
+			case err := <-errCh:
+				_ = err
 			default:
 			}
 			continue
