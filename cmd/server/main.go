@@ -208,7 +208,7 @@ func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serv
 // identify the service, its version and its upstream. Shared by both transports.
 func logStartupBanner(logger *logrus.Logger, cfg config.Config) {
 	u, _ := url.Parse(cfg.SearXNGURL)
-	logger.Infof("SearXNG URL: %s", handlers.SanitizeLog(u.Redacted()))
+	logger.Infof("SearXNG URL: %s", handlers.RedactURL(handlers.SanitizeLog(u.Redacted())))
 	logger.Infof("Version: %s, commit: %s, built: %s", version, commit, date)
 }
 

@@ -26,7 +26,7 @@ func redactArgs(input any) string {
 	if err != nil {
 		return "<unserializable>"
 	}
-	s := SanitizeLog(string(b))
+	s := RedactURL(SanitizeLog(string(b)))
 	if len(s) > accessLogMaxArgs {
 		s = s[:accessLogMaxArgs] + "..."
 	}
