@@ -91,8 +91,29 @@ func RegisterTools(s *mcp.Server, metrics *Metrics, logger *logrus.Logger, svc *
 func RegisterToolsWithSource(
 	s *mcp.Server, metrics *Metrics, logger *logrus.Logger, svc *application.SearchService, source string,
 ) {
-	for _, tool := range ToolDefinitions() {
+	defs := ToolDefinitions()
+	for _, tool := range defs {
 		registerTool(s, tool, metrics, logger, svc, source)
+	}
+	logToolSurface(logger, defs)
+}
+
+// logToolSurface logs the registered tool surface at startup (L10/L05GO): the
+// exact set of tools returned by tools/list, each by name/title with the
+// always_present field (L11). All search tools are static, so always_present is
+// true. When logging is disabled (stdio mode without LOG_LEVEL — the logger
+// sits at PanicLevel) this emits nothing. It is local wiring only and makes no
+// outbound request (A02).
+func logToolSurface(logger *logrus.Logger, tools []*mcp.Tool) {
+	if logger == nil {
+		return
+	}
+	for _, tool := range tools {
+		logger.WithFields(logrus.Fields{
+			"tool":           tool.Name,
+			"title":          tool.Title,
+			"always_present": true,
+		}).Info("mcp_tool_surface")
 	}
 }
 
