@@ -90,8 +90,8 @@ test:
 
 ## e2e via the go-docker-testsuite harness (github.com/teran/go-docker-testsuite,
 ## C09GO). Requires a running Docker daemon. Files carry `//go:build e2e` so
-## they are excluded from the default unit run (`make test`).
-## OPTIONAL — declared in a later fix once e2e tests exist (N31).
+## they are excluded from the default unit run (`make test`). Runs in CI as a
+## dedicated e2e job (C04).
 e2e:
 	go test -tags e2e ./...
 

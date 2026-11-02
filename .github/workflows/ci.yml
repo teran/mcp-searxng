@@ -43,3 +43,21 @@ jobs:
           name: coverage
           path: cover.out
           retention-days: 7
+
+  # e2e — full tool-handler → live SearXNG path (C04/T02/C09GO) via the
+  # go-docker-testsuite harness (`make e2e`). Requires a Docker daemon.
+  e2e:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.27"
+          cache: true
+
+      - name: e2e (make e2e)
+        run: make e2e
