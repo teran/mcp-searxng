@@ -389,6 +389,67 @@ Reads and buffers the request body to parse the JSON-RPC method name, validates 
 - Search query input is validated for length and emptiness before processing
 - Page number is validated against an upper bound
 
+### Domain security audit (S14)
+
+*Owner: security agent. This block is the S14 domain-specific audit, derived via the security-audit methodology and grounded in the mcp-searxng source (cmd/server, handlers, infrastructure/searxng).*
+
+#### Trust boundaries & threat model
+
+The server is a **Hybrid (M06) read-only search proxy**: stdio for a local trusted client, Streamable-HTTP for remote clients behind a TLS reverse proxy; **no auth** (operator-controlled exposure); forwards queries to a single configured SearXNG upstream.
+
+| Trust zone | Crosses boundary | Trusted? |
+|---|---|---|
+| MCP client / model host | tool args (query, categories, language, page, time_range, safesearch) → server | stdio: trusted; HTTP: **untrusted** |
+| Server process | sanitizes args/output, enforces limits | trusted |
+| SearXNG upstream | server → HTTP `/search` (with `X-Request-ID`) | **semi-trusted** |
+| SearXNG's aggregated engines | result content/URLs → server | **untrusted** (open-world, S07) |
+| Internal observability listener (`INTERNAL_ADDR`) | `GET /metrics`, `/healthz`, pprof | network-restricted only |
+
+**Threat model (STRIDE):** (a) *compromised/malicious HTTP model host* — batch amplification, oversized bodies, query flooding (DoS of the shared rate limiter / upstream), SSRF-shaped results; (b) *malicious SearXNG/engine response* — log injection via control/ANSI chars, hidden prompt-injection payloads via bidi overrides, `javascript:`/`ftp:` URLs returned to the model; (c) *network attacker on the internal listener* — reads request-rate/upstream telemetry if the listener leaks past its network boundary; (d) *credential leakage* — the SearXNG URL may embed a token; it must never reach logs.
+
+#### Data-sensitivity classification → C-I-A
+
+| Data class | Sensitivity | Confidentiality | Integrity | Availability |
+|---|---|---|---|---|
+| SearXNG base URL (may embed credentials) | **Secret** | `url.Redacted()` at startup banner (main.go:205); never log raw | — | — |
+| Search queries | **Restricted** | sanitized in access log (redactArgs); not PII-logged | validate types (S08) | — |
+| Result URLs/content (engines) | **Public/untrusted** | treat as untrusted (S07) | sanitize URL scheme + strip control/bidi chars | — |
+| Metrics (`INTERNAL_ADDR`) | **Restricted** | network-restrict listener; no auth → keep off public net | — | observability must stay up |
+
+All classes: no persistence; nothing encrypted at rest (X04 N/A — stateless).
+
+#### Domain-specific attack vectors
+
+| Vector | Impact | Requirement / mitigation |
+|---|---|---|
+| SSRF / URL injection in results | model given `javascript:`/`ftp:`/internal URLs | `sanitizeURL` allows only `http/https` (tools.go:196); `sanitizeImgSrc` allows `http/https/data` (tools.go:225) |
+| Upstream open redirect / credential forwarding | resty follows a redirect to attacker host | `RedirectNoPolicy()` disables redirects (main.go:161) |
+| Log injection / control chars / ANSI in returned content | forged log lines, terminal escape attacks | `SanitizeLog` strips control+bidi chars (middleware.go:123); `sanitizeOutput` strips C0/bidi (tools.go:169) |
+| Indirect prompt injection via result content | hidden payload spoofing tool output to model | `sanitizeOutput` removes bidi overrides (LRM/RLM/LRE/RLE/PDF/LRO/RLO); structured untrusted output (S07) |
+| DoS: batch amplification / oversized body / flooding | memory/CPU exhaustion, upstream starvation | `checkBatchSize` cap = 100 (middleware.go:45); `BodyLimitMiddleware` via `MaxBytesReader`; 10 MB response cap (client.go:26); 2-tier global+per-client token-bucket rate limiter (ratelimit.go:96) → 429 |
+| Credential leakage in logs | SearXNG token in startup banner/access log | `u.Redacted()` + `SanitizeLog` (main.go:205); access log uses redacted args; no-secrets-in-logs (L05) |
+| Metrics endpoint exposure | attacker reads request/upstream telemetry | `INTERNAL_ADDR` is a separate listener with **no auth** — MUST be network-restricted (loopback/firewall); not exposed via reverse proxy |
+| Auditability | no cross-system tracing | `request_id` forwarded as `X-Request-ID` (client.go:151); correlated access log (L09/L08) |
+
+#### Filled auditor checklist (S01–S14)
+
+| Criterion | Verdict | Note |
+|---|---|---|
+| S01 TLS | PASS | TLS terminated at reverse proxy (HTTP mode); stdio local |
+| S02 Secret redaction | **PARTIAL** | `url.Redacted()` + `SanitizeLog`; relies on resty/base-URL config not logging credentials |
+| S03 Input validation | PASS | typed params + sanitizers (S08) |
+| S04 Filesystem | N/A | no filesystem access |
+| S05 — | PASS | see S01/S02 logging controls |
+| S06 — | N/A | no state/persistence |
+| S07 Untrusted output | PASS | sanitizeOutput/sanitizeURL on all result fields |
+| S08 Injection validation | PASS | scheme allowlist, batch/body caps |
+| S09 — | PASS | no shell/SQL surface |
+| S10 Least privilege | PASS | read-only proxy, no mutating tools |
+| S11 SSRF | PASS | scheme allowlist + redirect disabled |
+| S12 HITL/destructive | N/A | no mutating/destructive ops |
+| S13 Supply chain | N/A | covered by CI govulncheck + gosec (AGENTS.md S5/C02) |
+| **S14** | **PASS** | this block present → N38 satisfied |
+
 ## Development
 
 ### Prerequisites
