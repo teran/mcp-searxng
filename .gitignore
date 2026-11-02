@@ -26,6 +26,9 @@ profile.cov
 go.work
 go.work.sum
 
+# Local tool binaries (golangci-lint etc. installed into a repo-local GOBIN)
+.gobin/
+
 # env file
 .env
 
