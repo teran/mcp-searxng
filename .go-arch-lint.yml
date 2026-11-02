@@ -44,6 +44,8 @@ components:
     in: config
   logging:
     in: logging
+  requestid:
+    in: requestid
 
 deps:
   # cmd is the composition root; it wires application + infrastructure +
@@ -62,6 +64,7 @@ deps:
     mayDependOn:
       - application
       - domain
+      - requestid
     anyVendorDeps: true
 
   # application uses domain.
@@ -70,10 +73,11 @@ deps:
       - domain
     anyVendorDeps: true
 
-  # infrastructure implements domain ports.
+  # infrastructure implements domain ports; forwards the correlation id.
   infrastructure:
     mayDependOn:
       - domain
+      - requestid
     anyVendorDeps: true
 
   # domain is the innermost layer — no outward internal deps (stdlib only).
@@ -88,6 +92,10 @@ deps:
 
   # logging is a leaf utility — no internal deps (uses logrus/stdlib).
   logging:
+    anyVendorDeps: true
+
+  # requestid is a leaf utility — no internal deps (stdlib only).
+  requestid:
     anyVendorDeps: true
 
 # Directories excluded from dependency analysis (generated code, vendored deps).

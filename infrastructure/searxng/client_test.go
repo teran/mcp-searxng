@@ -15,6 +15,7 @@ import (
 
 	"github.com/teran/mcp-searxng/domain"
 	infra "github.com/teran/mcp-searxng/infrastructure/searxng"
+	"github.com/teran/mcp-searxng/requestid"
 )
 
 func newTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *infra.Client) {
@@ -23,6 +24,52 @@ func newTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *i
 	client := infra.NewClient(srv.URL, resty.New())
 
 	return srv, client
+}
+
+// TestClient_ForwardsRequestID verifies L09/L04GO: when the context carries a
+// request_id, the outbound request to SearXNG includes it as X-Request-ID so
+// upstream logs can be correlated with the server's access log.
+func TestClient_ForwardsRequestID(t *testing.T) {
+	t.Parallel()
+
+	var gotHeader string
+	srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-Request-ID")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query":"x","results":[],"number_of_results":0}`))
+	})
+	defer srv.Close()
+
+	ctx := requestid.With(context.Background(), "req-abc123")
+	if _, err := client.Search(ctx, domain.SearchParams{Query: "x"}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	if gotHeader != "req-abc123" {
+		t.Errorf("X-Request-ID = %q, want req-abc123", gotHeader)
+	}
+}
+
+// TestClient_NoRequestID_OmitsHeader verifies no X-Request-ID is sent when the
+// context carries none.
+func TestClient_NoRequestID_OmitsHeader(t *testing.T) {
+	t.Parallel()
+
+	var gotHeader string
+	srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-Request-ID")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"query":"x","results":[],"number_of_results":0}`))
+	})
+	defer srv.Close()
+
+	if _, err := client.Search(context.Background(), domain.SearchParams{Query: "x"}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	if gotHeader != "" {
+		t.Errorf("X-Request-ID = %q, want empty", gotHeader)
+	}
 }
 
 // errTransport is a round tripper that always returns the given error.

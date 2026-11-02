@@ -16,6 +16,7 @@ import (
 	"resty.dev/v3"
 
 	"github.com/teran/mcp-searxng/domain"
+	"github.com/teran/mcp-searxng/requestid"
 )
 
 // maxResponseBodySize caps the size of a SearXNG response body read by the
@@ -79,6 +80,12 @@ func (c *Client) doRequest(ctx context.Context, path string, query url.Values) (
 		// Do not let resty buffer the whole response; we read the raw stream
 		// below under a 10 MB cap to prevent memory exhaustion.
 		SetResponseDoNotParse(true)
+
+	// Forward the correlation request_id as X-Request-ID (L09/L04GO) so the
+	// upstream SearXNG logs can be correlated with this server's access log.
+	if id := requestid.From(ctx); id != "" {
+		req = req.SetHeader("X-Request-ID", id)
+	}
 
 	if query != nil {
 		req = req.SetQueryParamsFromValues(query)

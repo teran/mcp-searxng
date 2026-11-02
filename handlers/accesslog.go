@@ -9,6 +9,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
+
+	"github.com/teran/mcp-searxng/requestid"
 )
 
 // accessLogMaxArgs bounds the number of characters of the sanitized arguments
@@ -45,16 +47,24 @@ func WrapAccessLog[I, O any](
 ) mcp.ToolHandlerFor[I, O] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, input I) (*mcp.CallToolResult, O, error) {
 		start := time.Now()
+
+		// Generate a per-call request id, thread it through the context (so the
+		// outbound client forwards it as X-Request-ID) and surface it on the
+		// access-log line (L09/L04GO).
+		requestID := requestid.New()
+		ctx = requestid.With(ctx, requestID)
+
 		result, output, err := handler(ctx, req, input)
 		duration := time.Since(start)
 
 		if logger != nil && logger.IsLevelEnabled(logrus.InfoLevel) {
 			fields := logrus.Fields{
-				"tool":     toolName,
-				"args":     redactArgs(input),
-				"source":   source,
-				"duration": duration,
-				"outcome":  "success",
+				"tool":       toolName,
+				"args":       redactArgs(input),
+				"source":     source,
+				"request_id": requestID,
+				"duration":   duration,
+				"outcome":    "success",
 			}
 			if err != nil {
 				fields["outcome"] = "error"

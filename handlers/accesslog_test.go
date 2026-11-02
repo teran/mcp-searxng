@@ -10,6 +10,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/sirupsen/logrus"
+
+	"github.com/teran/mcp-searxng/requestid"
 )
 
 type input struct {
@@ -47,6 +49,55 @@ func TestWrapAccessLog(t *testing.T) {
 	t.Run("nil logger is a no-op and does not panic", func(t *testing.T) {
 		testWrapAccessLogNil(t)
 	})
+}
+
+// TestAccessLogIncludesRequestID verifies L09/L04GO: the access log line
+// carries a request_id that is also threaded through the context to the tool
+// handler (so the outbound client can forward it as X-Request-ID).
+func TestAccessLogIncludesRequestID(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&logrus.JSONFormatter{})
+	logger.SetLevel(logrus.InfoLevel)
+
+	var gotID string
+	handler := WrapAccessLog(
+		logger,
+		"stdio",
+		"search",
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ input) (*mcp.CallToolResult, any, error) {
+			gotID = requestid.From(ctx)
+
+			return &mcp.CallToolResult{}, nil, nil
+		},
+	)
+
+	if _, _, err := handler(context.Background(), &mcp.CallToolRequest{}, input{Query: "x"}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if gotID == "" {
+		t.Fatal("handler context carried no request_id")
+	}
+
+	var rec map[string]any
+	for line := range strings.SplitSeq(buf.String(), "\n") {
+		if line == "" {
+			continue
+		}
+		if json.Unmarshal([]byte(line), &rec) == nil && rec["msg"] == "mcp_tool" {
+			break
+		}
+	}
+	if rec["request_id"] == "" {
+		t.Error("access log line missing request_id field")
+	}
+	if rec["request_id"] != gotID {
+		t.Errorf("access log request_id = %v, want %q", rec["request_id"], gotID)
+	}
 }
 
 func testWrapAccessLogSuccess(t *testing.T, newJSONLogger func() (*logrus.Logger, *bytes.Buffer)) {
