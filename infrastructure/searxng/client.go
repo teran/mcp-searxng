@@ -12,7 +12,9 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"resty.dev/v3"
 
 	"github.com/teran/mcp-searxng/domain"
@@ -33,6 +35,68 @@ var ErrAPIClient = errors.New("API error")
 type Client struct {
 	baseURL string
 	client  *resty.Client
+	metrics *UpstreamMetrics
+}
+
+// UpstreamMetrics records SearXNG upstream response metrics (O03) by analogy
+// with the standard Go HTTP metrics: a request counter labelled by status class
+// and a request-duration histogram.
+type UpstreamMetrics struct {
+	requestsTotal *prometheus.CounterVec
+	duration      *prometheus.HistogramVec
+}
+
+// NewUpstreamMetrics creates and registers the upstream metrics on reg.
+func NewUpstreamMetrics(reg *prometheus.Registry) *UpstreamMetrics {
+	m := &UpstreamMetrics{
+		requestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "mcp_searxng_upstream_requests_total",
+			Help: "Total SearXNG upstream requests partitioned by status class.",
+		}, []string{"status_class"}),
+		duration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "mcp_searxng_upstream_duration_seconds",
+			Help:    "SearXNG upstream request duration in seconds.",
+			Buckets: prometheus.DefBuckets,
+		}, []string{}),
+	}
+	reg.MustRegister(m.requestsTotal, m.duration)
+
+	return m
+}
+
+// record observes one upstream request with the given status class and latency.
+func (m *UpstreamMetrics) record(statusClass string, d time.Duration) {
+	if m == nil {
+		return
+	}
+	m.requestsTotal.WithLabelValues(statusClass).Inc()
+	m.duration.WithLabelValues().Observe(d.Seconds())
+}
+
+// SetMetrics installs the upstream metrics collector on the client.
+func (c *Client) SetMetrics(m *UpstreamMetrics) {
+	c.metrics = m
+}
+
+// HTTP status class upper bounds, kept as constants for the mnd linter.
+const (
+	status2xxUpper = 300
+	status3xxUpper = 400
+	status4xxUpper = 500
+)
+
+// statusClass buckets an HTTP status code into a coarse class label.
+func statusClass(code int) string {
+	switch {
+	case code < status2xxUpper:
+		return "2xx"
+	case code < status3xxUpper:
+		return "3xx"
+	case code < status4xxUpper:
+		return "4xx"
+	default:
+		return "5xx"
+	}
 }
 
 // NewClient creates a new SearXNG API client with the given resty client.
@@ -91,7 +155,15 @@ func (c *Client) doRequest(ctx context.Context, path string, query url.Values) (
 		req = req.SetQueryParamsFromValues(query)
 	}
 
+	start := time.Now()
 	resp, err := req.Get(fullURL)
+	if c.metrics != nil {
+		status := "error"
+		if resp != nil {
+			status = statusClass(resp.StatusCode())
+		}
+		c.metrics.record(status, time.Since(start))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}

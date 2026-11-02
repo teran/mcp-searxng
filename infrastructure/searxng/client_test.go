@@ -13,6 +13,8 @@ import (
 
 	"resty.dev/v3"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/teran/mcp-searxng/domain"
 	infra "github.com/teran/mcp-searxng/infrastructure/searxng"
 	"github.com/teran/mcp-searxng/requestid"
@@ -69,6 +71,80 @@ func TestClient_NoRequestID_OmitsHeader(t *testing.T) {
 
 	if gotHeader != "" {
 		t.Errorf("X-Request-ID = %q, want empty", gotHeader)
+	}
+}
+
+// TestClient_UpstreamMetrics verifies O03: a successful upstream call records
+// the request counter under the 2xx status class.
+func TestClient_UpstreamMetrics(t *testing.T) {
+	t.Parallel()
+
+	reg := prometheus.NewRegistry()
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"query":"x","results":[],"number_of_results":0}`))
+	})
+	defer srv.Close()
+
+	client.SetMetrics(infra.NewUpstreamMetrics(reg))
+	if _, err := client.Search(context.Background(), domain.SearchParams{Query: "x"}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	seen := false
+	for _, mf := range families {
+		if mf.GetName() != "mcp_searxng_upstream_requests_total" {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			class := m.GetLabel()[0].GetValue()
+			if class == "2xx" && m.GetCounter().GetValue() == 1 {
+				seen = true
+			}
+		}
+	}
+	if !seen {
+		t.Error("expected mcp_searxng_upstream_requests_total{status_class=2xx} == 1")
+	}
+}
+
+// TestClient_UpstreamMetricsServerError verifies the upstream counter records a
+// 5xx status class when SearXNG returns a server error.
+func TestClient_UpstreamMetricsServerError(t *testing.T) {
+	t.Parallel()
+
+	reg := prometheus.NewRegistry()
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	})
+	defer srv.Close()
+
+	client.SetMetrics(infra.NewUpstreamMetrics(reg))
+	if _, err := client.Search(context.Background(), domain.SearchParams{Query: "x"}); err == nil {
+		t.Fatal("expected an error from a 500 upstream response")
+	}
+
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	seen := false
+	for _, mf := range families {
+		if mf.GetName() != "mcp_searxng_upstream_requests_total" {
+			continue
+		}
+		for _, m := range mf.GetMetric() {
+			if m.GetLabel()[0].GetValue() == "5xx" && m.GetCounter().GetValue() == 1 {
+				seen = true
+			}
+		}
+	}
+	if !seen {
+		t.Error("expected mcp_searxng_upstream_requests_total{status_class=5xx} == 1")
 	}
 }
 

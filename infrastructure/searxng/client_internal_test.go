@@ -1,10 +1,39 @@
 package searxng
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
 )
+
+// TestStatusClass verifies the coarse status-class bucketing used for the
+// upstream metrics label (O03), covering every branch.
+func TestStatusClass(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		code int
+		want string
+	}{
+		{200, "2xx"},
+		{299, "2xx"},
+		{300, "3xx"},
+		{399, "3xx"},
+		{400, "4xx"},
+		{499, "4xx"},
+		{500, "5xx"},
+		{599, "5xx"},
+	}
+
+	for _, testCase := range cases {
+		t.Run(fmt.Sprintf("%d", testCase.code), func(t *testing.T) {
+			if got := statusClass(testCase.code); got != testCase.want {
+				t.Errorf("statusClass(%d) = %q, want %q", testCase.code, got, testCase.want)
+			}
+		})
+	}
+}
 
 func TestExtractErrorDetail(t *testing.T) {
 	t.Parallel()

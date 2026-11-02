@@ -164,8 +164,13 @@ func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serv
 		// empty/malformed.
 		SetHeader("User-Agent", fmt.Sprintf("mcp-searxng/%s (https://github.com/teran/mcp-searxng)", version))
 
+	// Create the Prometheus registry first so the upstream metrics collector
+	// can be attached to the SearXNG client (O03).
+	promRegistry := prometheus.NewRegistry()
+
 	// Create the SearXNG client and search service (shared across all requests).
 	searxngClient := infra.NewClient(cfg.SearXNGURL, sharedRestyClient)
+	searxngClient.SetMetrics(infra.NewUpstreamMetrics(promRegistry))
 	searchSvc := application.NewSearchService(searxngClient)
 
 	// Create the MCP server instance.
@@ -179,8 +184,7 @@ func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serv
 		},
 	})
 
-	// Create Prometheus registry and metrics collectors.
-	promRegistry := prometheus.NewRegistry()
+	// Create MCP metrics collectors on the shared registry.
 	metrics := handlers.NewMetrics(promRegistry)
 
 	// Register tools via handler factories (service injected explicitly — no context lookup).
@@ -192,13 +196,6 @@ func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serv
 		metrics:      metrics,
 		close:        func() { _ = sharedRestyClient.Close() },
 	}, nil
-}
-
-// healthzHandler reports service liveness. It bypasses all middleware.
-func healthzHandler(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 // logStartupBanner writes the startup banner (L06) — the first log lines that
@@ -227,11 +224,10 @@ func runStdio(
 	// Startup banner first so it is the opening log line (L06).
 	logStartupBanner(logger, cfg)
 
-	// Internal observability server (metrics + healthz) — O01.
-	metricsHandler := handlers.RegisterMetricsOnRegistry(deps.promRegistry)
+	// Internal observability server (metrics + pprof + healthz) — O01.
+	metricsHandler := handlers.ObservabilityHandler(deps.promRegistry, true)
 	metricsMux := http.NewServeMux()
-	metricsMux.Handle("GET /metrics", metricsHandler)
-	metricsMux.HandleFunc("GET /healthz", healthzHandler)
+	metricsMux.Handle("/", metricsHandler)
 
 	metricsServer := &http.Server{
 		Addr:              cfg.InternalAddr,
@@ -287,6 +283,7 @@ func runHTTP(ctx context.Context, cfg config.Config, logger *logrus.Logger, main
 	defer deps.close()
 
 	srv := deps.srv
+	promRegistry := deps.promRegistry
 
 	// Create the Streamable HTTP handler.
 	mcpHandler := mcp.NewStreamableHTTPHandler(
@@ -300,15 +297,17 @@ func runHTTP(ctx context.Context, cfg config.Config, logger *logrus.Logger, main
 
 	handler, stopRateLimiter := buildHTTPHandler(logger, deps.metrics, cfg, mcpHandler)
 
-	// Health-check endpoint — bypasses all middleware (auth, rate limit, etc.)
+	// Health-check endpoint — bypasses all middleware (auth, rate limit, etc.).
+	// The MCP handler is wrapped with the standard net/http Prometheus metrics
+	// (O02: latency / counter / response size).
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", healthzHandler)
-	mux.Handle("/", handler)
+	mux.HandleFunc("GET /healthz", handlers.Healthz)
+	mux.Handle("/", handlers.InstrumentServer(promRegistry, handler))
 
 	logStartupBanner(logger, cfg)
 
 	mainServer := newMainServer(cfg, mux)
-	metricsServer := newMetricsServer(cfg.InternalAddr, handlers.RegisterMetricsOnRegistry(deps.promRegistry))
+	metricsServer := newMetricsServer(cfg.InternalAddr, handlers.ObservabilityHandler(promRegistry, false))
 
 	// Channel to capture server errors (buffered to hold both if both fail).
 	errCh := make(chan error, serverErrBufferSize)
