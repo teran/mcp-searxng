@@ -46,7 +46,10 @@ checksum:
   name_template: "checksums.txt"
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  # Non-tag / master builds must embed a SNAPSHOT version (B02/N43):
+  # {X}-SNAPSHOT-{commit}. The embedded appVersion then reflects the dev state
+  # rather than looking like a stable release.
+  version_template: "{{ incpatch .Version }}-SNAPSHOT-{{ .ShortCommit }}"
 
 changelog:
   sort: asc
