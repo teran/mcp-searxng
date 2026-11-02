@@ -21,6 +21,7 @@ func newTestServer(t *testing.T, handler http.HandlerFunc) (*httptest.Server, *i
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	client := infra.NewClient(srv.URL, resty.New())
+
 	return srv, client
 }
 
@@ -158,99 +159,104 @@ func TestClient_Search_Categories(t *testing.T) {
 func TestClient_Search_HappyPath_EdgeCases(t *testing.T) {
 	t.Parallel()
 
-	t.Run("empty response returns empty result", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"query":             "test",
-				"results":           []any{},
-				"number_of_results": 0,
-			})
-		})
-		defer srv.Close()
+	t.Run("empty response returns empty result", testClientSearchHappyEmpty)
+	t.Run("search with answers and suggestions", testClientSearchHappyAnswersSuggestions)
+	t.Run("search with infoboxes", testClientSearchHappyInfoboxes)
+	t.Run("search with empty params uses default format", testClientSearchHappyEmptyParams)
+}
 
-		result, err := client.Search(context.Background(), domain.SearchParams{
-			Query: "test",
+func testClientSearchHappyEmpty(t *testing.T) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"query":             "test",
+			"results":           []any{},
+			"number_of_results": 0,
 		})
-		if err != nil {
-			t.Fatalf("Search() returned error: %v", err)
-		}
-		if len(result.Results) != 0 {
-			t.Errorf("len(Results) = %d, want 0", len(result.Results))
-		}
 	})
+	defer srv.Close()
 
-	t.Run("search with answers and suggestions", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"query":       "test",
-				"results":     []any{},
-				"answers":     []string{"42 is the answer"},
-				"suggestions": []string{"did you mean test2"},
-			})
-		})
-		defer srv.Close()
-
-		result, err := client.Search(context.Background(), domain.SearchParams{
-			Query: "test",
-		})
-		if err != nil {
-			t.Fatalf("Search() returned error: %v", err)
-		}
-		if len(result.Answers) != 1 || string(result.Answers[0]) != "42 is the answer" {
-			t.Errorf("Answers = %v, want [42 is the answer]", result.Answers)
-		}
-		if len(result.Suggestions) != 1 || string(result.Suggestions[0]) != "did you mean test2" {
-			t.Errorf("Suggestions = %v, want [did you mean test2]", result.Suggestions)
-		}
+	result, err := client.Search(context.Background(), domain.SearchParams{
+		Query: "test",
 	})
+	if err != nil {
+		t.Fatalf("Search() returned error: %v", err)
+	}
+	if len(result.Results) != 0 {
+		t.Errorf("len(Results) = %d, want 0", len(result.Results))
+	}
+}
 
-	t.Run("search with infoboxes", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"query":   "test",
-				"results": []any{},
-				"infoboxes": []map[string]any{
-					{
-						"id":      "infobox_1",
-						"content": "Infobox content",
-					},
+func testClientSearchHappyAnswersSuggestions(t *testing.T) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"query":       "test",
+			"results":     []any{},
+			"answers":     []string{"42 is the answer"},
+			"suggestions": []string{"did you mean test2"},
+		})
+	})
+	defer srv.Close()
+
+	result, err := client.Search(context.Background(), domain.SearchParams{
+		Query: "test",
+	})
+	if err != nil {
+		t.Fatalf("Search() returned error: %v", err)
+	}
+	if len(result.Answers) != 1 || string(result.Answers[0]) != "42 is the answer" {
+		t.Errorf("Answers = %v, want [42 is the answer]", result.Answers)
+	}
+	if len(result.Suggestions) != 1 || string(result.Suggestions[0]) != "did you mean test2" {
+		t.Errorf("Suggestions = %v, want [did you mean test2]", result.Suggestions)
+	}
+}
+
+func testClientSearchHappyInfoboxes(t *testing.T) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"query":   "test",
+			"results": []any{},
+			"infoboxes": []map[string]any{
+				{
+					"id":      "infobox_1",
+					"content": "Infobox content",
 				},
-			})
+			},
 		})
-		defer srv.Close()
-
-		result, err := client.Search(context.Background(), domain.SearchParams{
-			Query: "test",
-		})
-		if err != nil {
-			t.Fatalf("Search() returned error: %v", err)
-		}
-		if len(result.Infoboxes) != 1 {
-			t.Fatalf("len(Infoboxes) = %d, want 1", len(result.Infoboxes))
-		}
-		if result.Infoboxes[0].ID != "infobox_1" {
-			t.Errorf("Infoboxes[0].ID = %q, want %q", result.Infoboxes[0].ID, "infobox_1")
-		}
 	})
+	defer srv.Close()
 
-	t.Run("search with empty params uses default format", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			if got := r.URL.Query().Get("format"); got != "json" {
-				t.Errorf("format = %q, want %q", got, "json")
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"query": "", "results": []any{}})
-		})
-		defer srv.Close()
-
-		_, err := client.Search(context.Background(), domain.SearchParams{})
-		if err != nil {
-			t.Fatalf("Search() returned error: %v", err)
-		}
+	result, err := client.Search(context.Background(), domain.SearchParams{
+		Query: "test",
 	})
+	if err != nil {
+		t.Fatalf("Search() returned error: %v", err)
+	}
+	if len(result.Infoboxes) != 1 {
+		t.Fatalf("len(Infoboxes) = %d, want 1", len(result.Infoboxes))
+	}
+	if result.Infoboxes[0].ID != "infobox_1" {
+		t.Errorf("Infoboxes[0].ID = %q, want %q", result.Infoboxes[0].ID, "infobox_1")
+	}
+}
+
+func testClientSearchHappyEmptyParams(t *testing.T) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("format"); got != "json" {
+			t.Errorf("format = %q, want %q", got, "json")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"query": "", "results": []any{}})
+	})
+	defer srv.Close()
+
+	_, err := client.Search(context.Background(), domain.SearchParams{})
+	if err != nil {
+		t.Fatalf("Search() returned error: %v", err)
+	}
 }
 
 // -- HTTP error path - basic errors -----------------------------------------
@@ -259,7 +265,7 @@ func TestClient_Search_HTTPErrors_Basic(t *testing.T) {
 	t.Parallel()
 
 	t.Run("HTTP 403 returns API error", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 		})
 		defer srv.Close()
@@ -273,7 +279,7 @@ func TestClient_Search_HTTPErrors_Basic(t *testing.T) {
 	})
 
 	t.Run("HTTP 500 with JSON detail field", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"detail":"internal server error detail"}`))
@@ -293,7 +299,7 @@ func TestClient_Search_HTTPErrors_Basic(t *testing.T) {
 	})
 
 	t.Run("HTTP 500 with JSON message field", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"message":"something went wrong"}`))
@@ -318,82 +324,87 @@ func TestClient_Search_HTTPErrors_Basic(t *testing.T) {
 func TestClient_Search_HTTPErrors_Extended(t *testing.T) {
 	t.Parallel()
 
-	t.Run("HTTP 500 with plain text body", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Header().Set("Content-Type", "text/plain")
-			_, _ = w.Write([]byte("Internal Server Error"))
-		})
-		defer srv.Close()
+	t.Run("HTTP 500 with plain text body", testClientSearchErr500PlainText)
+	t.Run("HTTP 404 with empty body", testClientSearchErr404Empty)
+	t.Run("HTTP 500 with plain text body exceeding 512 chars", testClientSearchErr500LongBody)
+	t.Run("HTTP 500 with body containing newlines", testClientSearchErr500Newlines)
+}
 
-		_, err := client.Search(context.Background(), domain.SearchParams{Query: "test"})
-		if err == nil {
-			t.Fatal("Search() expected error for HTTP 500, got nil")
-		}
-		if !errors.Is(err, infra.ErrAPIClient) {
-			t.Errorf("error should wrap ErrAPIClient")
-		}
-		if !strings.Contains(err.Error(), "Internal Server Error") {
-			t.Errorf("error = %q, want substring %q", err.Error(), "Internal Server Error")
-		}
+func testClientSearchErr500PlainText(t *testing.T) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("Internal Server Error"))
 	})
+	defer srv.Close()
 
-	t.Run("HTTP 404 with empty body", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusNotFound)
-		})
-		defer srv.Close()
+	_, err := client.Search(context.Background(), domain.SearchParams{Query: "test"})
+	if err == nil {
+		t.Fatal("Search() expected error for HTTP 500, got nil")
+	}
+	if !errors.Is(err, infra.ErrAPIClient) {
+		t.Errorf("error should wrap ErrAPIClient")
+	}
+	if !strings.Contains(err.Error(), "Internal Server Error") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "Internal Server Error")
+	}
+}
 
-		_, err := client.Search(context.Background(), domain.SearchParams{Query: "test"})
-		if err == nil {
-			t.Fatal("Search() expected error for HTTP 404, got nil")
-		}
-		if !errors.Is(err, infra.ErrAPIClient) {
-			t.Errorf("error should wrap ErrAPIClient")
-		}
-		if !strings.Contains(err.Error(), "Not Found") {
-			t.Errorf("error = %q, want substring %q", err.Error(), "Not Found")
-		}
+func testClientSearchErr404Empty(t *testing.T) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
 	})
+	defer srv.Close()
 
-	t.Run("HTTP 500 with plain text body exceeding 512 chars", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Header().Set("Content-Type", "text/plain")
-			longBody := strings.Repeat("A", 600)
-			_, _ = w.Write([]byte(longBody))
-		})
-		defer srv.Close()
+	_, err := client.Search(context.Background(), domain.SearchParams{Query: "test"})
+	if err == nil {
+		t.Fatal("Search() expected error for HTTP 404, got nil")
+	}
+	if !errors.Is(err, infra.ErrAPIClient) {
+		t.Errorf("error should wrap ErrAPIClient")
+	}
+	if !strings.Contains(err.Error(), "Not Found") {
+		t.Errorf("error = %q, want substring %q", err.Error(), "Not Found")
+	}
+}
 
-		_, err := client.Search(context.Background(), domain.SearchParams{Query: "test"})
-		if err == nil {
-			t.Fatal("Search() expected error for long body, got nil")
-		}
-		// Body should be truncated to 512 chars (error wraps body with ~40 chars of prefix/suffix).
-		if len(err.Error()) > 570 {
-			t.Errorf("error length = %d, want <= 570 (truncated)", len(err.Error()))
-		}
+func testClientSearchErr500LongBody(t *testing.T) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "text/plain")
+		longBody := strings.Repeat("A", 600)
+		_, _ = w.Write([]byte(longBody))
 	})
+	defer srv.Close()
 
-	t.Run("HTTP 500 with body containing newlines", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Header().Set("Content-Type", "text/plain")
-			_, _ = w.Write([]byte("line1\nline2\nline3"))
-		})
-		defer srv.Close()
+	_, err := client.Search(context.Background(), domain.SearchParams{Query: "test"})
+	if err == nil {
+		t.Fatal("Search() expected error for long body, got nil")
+	}
+	// Body should be truncated to 512 chars (error wraps body with ~40 chars of prefix/suffix).
+	if len(err.Error()) > 570 {
+		t.Errorf("error length = %d, want <= 570 (truncated)", len(err.Error()))
+	}
+}
 
-		_, err := client.Search(context.Background(), domain.SearchParams{Query: "test"})
-		if err == nil {
-			t.Fatal("Search() expected error, got nil")
-		}
-		if strings.Contains(err.Error(), "line2") || strings.Contains(err.Error(), "line3") {
-			t.Errorf("error should contain only first line, got = %q", err.Error())
-		}
-		if !strings.Contains(err.Error(), "line1") {
-			t.Errorf("error should contain first line, got = %q", err.Error())
-		}
+func testClientSearchErr500Newlines(t *testing.T) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte("line1\nline2\nline3"))
 	})
+	defer srv.Close()
+
+	_, err := client.Search(context.Background(), domain.SearchParams{Query: "test"})
+	if err == nil {
+		t.Fatal("Search() expected error, got nil")
+	}
+	if strings.Contains(err.Error(), "line2") || strings.Contains(err.Error(), "line3") {
+		t.Errorf("error should contain only first line, got = %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "line1") {
+		t.Errorf("error should contain first line, got = %q", err.Error())
+	}
 }
 
 // -- network & IO error path tests ------------------------------------------
@@ -417,7 +428,7 @@ func TestClient_Search_NetworkErrors(t *testing.T) {
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		srv, client := newTestServer(t, func(_ http.ResponseWriter, r *http.Request) {
 			<-r.Context().Done()
 		})
 		defer srv.Close()
@@ -438,7 +449,7 @@ func TestClient_Search_ParseErrors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("malformed JSON response", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{broken`))
 		})
@@ -454,7 +465,7 @@ func TestClient_Search_ParseErrors(t *testing.T) {
 	})
 
 	t.Run("response body larger than 10MB", func(t *testing.T) {
-		srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			largeStr := string(bytes.Repeat([]byte("x"), 12<<20)) // 12 MB
 			_, _ = fmt.Fprintf(w, `{"query":"test","results":[],"padding":%q}`, largeStr)
@@ -476,7 +487,7 @@ func TestClient_Search_ParseErrors(t *testing.T) {
 func TestToDomain_InfoboxURLs(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"query":   "test",
@@ -501,23 +512,23 @@ func TestToDomain_InfoboxURLs(t *testing.T) {
 	if len(result.Infoboxes) != 1 {
 		t.Fatalf("len(Infoboxes) = %d, want 1", len(result.Infoboxes))
 	}
-	ib := result.Infoboxes[0]
+	infobox := result.Infoboxes[0]
 
-	if len(ib.URLs) != 2 {
-		t.Fatalf("len(URLs) = %d, want 2", len(ib.URLs))
+	if len(infobox.URLs) != 2 {
+		t.Fatalf("len(URLs) = %d, want 2", len(infobox.URLs))
 	}
-	if ib.URLs[0].Title != "Link 1" || ib.URLs[0].URL != "https://example.com/1" {
-		t.Errorf("URLs[0] = %+v, want {Link 1 https://example.com/1}", ib.URLs[0])
+	if infobox.URLs[0].Title != "Link 1" || infobox.URLs[0].URL != "https://example.com/1" {
+		t.Errorf("URLs[0] = %+v, want {Link 1 https://example.com/1}", infobox.URLs[0])
 	}
-	if ib.URLs[1].Title != "Link 2" || ib.URLs[1].URL != "https://example.com/2" {
-		t.Errorf("URLs[1] = %+v, want {Link 2 https://example.com/2}", ib.URLs[1])
+	if infobox.URLs[1].Title != "Link 2" || infobox.URLs[1].URL != "https://example.com/2" {
+		t.Errorf("URLs[1] = %+v, want {Link 2 https://example.com/2}", infobox.URLs[1])
 	}
 }
 
 func TestToDomain_InfoboxAttributes(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"query":   "test",
@@ -542,23 +553,23 @@ func TestToDomain_InfoboxAttributes(t *testing.T) {
 	if len(result.Infoboxes) != 1 {
 		t.Fatalf("len(Infoboxes) = %d, want 1", len(result.Infoboxes))
 	}
-	ib := result.Infoboxes[0]
+	infobox := result.Infoboxes[0]
 
-	if len(ib.Attributes) != 2 {
-		t.Fatalf("len(Attributes) = %d, want 2", len(ib.Attributes))
+	if len(infobox.Attributes) != 2 {
+		t.Fatalf("len(Attributes) = %d, want 2", len(infobox.Attributes))
 	}
-	if ib.Attributes[0].Key != "Population" || ib.Attributes[0].Value != "8M" {
-		t.Errorf("Attributes[0] = %+v, want {Population 8M}", ib.Attributes[0])
+	if infobox.Attributes[0].Key != "Population" || infobox.Attributes[0].Value != "8M" {
+		t.Errorf("Attributes[0] = %+v, want {Population 8M}", infobox.Attributes[0])
 	}
-	if ib.Attributes[1].Key != "Area" || ib.Attributes[1].Value != "2,000 km²" {
-		t.Errorf("Attributes[1] = %+v, want {Area 2,000 km²}", ib.Attributes[1])
+	if infobox.Attributes[1].Key != "Area" || infobox.Attributes[1].Value != "2,000 km²" {
+		t.Errorf("Attributes[1] = %+v, want {Area 2,000 km²}", infobox.Attributes[1])
 	}
 }
 
 func TestToDomain_InfoboxDetails(t *testing.T) {
 	t.Parallel()
 
-	srv, client := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	srv, client := newTestServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"query":   "test",
@@ -591,12 +602,12 @@ func TestToDomain_InfoboxDetails(t *testing.T) {
 	if len(result.Infoboxes) != 1 {
 		t.Fatalf("len(Infoboxes) = %d, want 1", len(result.Infoboxes))
 	}
-	ib := result.Infoboxes[0]
+	infobox := result.Infoboxes[0]
 
-	if len(ib.Infoboxes) != 1 {
-		t.Fatalf("len(Infoboxes[0].Infoboxes) = %d, want 1", len(ib.Infoboxes))
+	if len(infobox.Infoboxes) != 1 {
+		t.Fatalf("len(Infoboxes[0].Infoboxes) = %d, want 1", len(infobox.Infoboxes))
 	}
-	det := ib.Infoboxes[0]
+	det := infobox.Infoboxes[0]
 	if det.ID != "detail_1" {
 		t.Errorf("InfoboxDetail.ID = %q, want %q", det.ID, "detail_1")
 	}

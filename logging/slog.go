@@ -67,6 +67,7 @@ func (h *logrusHandler) Handle(_ context.Context, r slog.Record) error {
 	}
 	r.Attrs(func(a slog.Attr) bool {
 		h.appendAttr(fields, a, h.groups)
+
 		return true
 	})
 
@@ -76,6 +77,7 @@ func (h *logrusHandler) Handle(_ context.Context, r slog.Record) error {
 	fields["slog_level"] = r.Level.String()
 
 	h.logger.WithFields(fields).Log(slogLevelToLogrus(r.Level), r.Message)
+
 	return nil
 }
 
@@ -87,6 +89,7 @@ func (h *logrusHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	for _, a := range attrs {
 		merged = append(merged, attrEntry{attr: a, groups: h.groups})
 	}
+
 	return &logrusHandler{logger: h.logger, attrs: merged, groups: h.groups}
 }
 
@@ -97,6 +100,7 @@ func (h *logrusHandler) WithGroup(name string) slog.Handler {
 		return h
 	}
 	groups := append(append([]string{}, h.groups...), name)
+
 	return &logrusHandler{logger: h.logger, attrs: h.attrs, groups: groups}
 }
 
@@ -110,6 +114,7 @@ func (h *logrusHandler) appendAttr(fields logrus.Fields, a slog.Attr, groups []s
 		for _, sub := range a.Value.Group() {
 			h.appendAttr(fields, sub, subGroups)
 		}
+
 		return
 	}
 

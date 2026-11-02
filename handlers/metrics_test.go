@@ -16,6 +16,7 @@ func mustRegisterMetrics(t *testing.T) *Metrics {
 	t.Helper()
 	reg := prometheus.NewRegistry()
 	m := NewMetrics(reg)
+
 	return m
 }
 
@@ -52,9 +53,13 @@ func TestWrapToolHandler(t *testing.T) {
 
 	t.Run("successful handler records 2xx metric", func(t *testing.T) {
 		m := mustRegisterMetrics(t)
-		handler := WrapToolHandler[testInput, testOutput](m, "test_tool", func(ctx context.Context, _ *mcp.CallToolRequest, input testInput) (*mcp.CallToolResult, testOutput, error) {
-			return nil, testOutput{Result: "ok"}, nil
-		})
+		handler := WrapToolHandler[testInput, testOutput](
+			m,
+			"test_tool",
+			func(_ context.Context, _ *mcp.CallToolRequest, _ testInput) (*mcp.CallToolResult, testOutput, error) {
+				return nil, testOutput{Result: "ok"}, nil
+			},
+		)
 
 		_, output, err := handler(context.Background(), nil, testInput{Name: "test"})
 		if err != nil {
@@ -67,9 +72,13 @@ func TestWrapToolHandler(t *testing.T) {
 
 	t.Run("error handler records 4xx metric", func(t *testing.T) {
 		m := mustRegisterMetrics(t)
-		handler := WrapToolHandler[testInput, testOutput](m, "test_tool", func(ctx context.Context, _ *mcp.CallToolRequest, input testInput) (*mcp.CallToolResult, testOutput, error) {
-			return nil, testOutput{}, fmt.Errorf("test error")
-		})
+		handler := WrapToolHandler[testInput, testOutput](
+			m,
+			"test_tool",
+			func(_ context.Context, _ *mcp.CallToolRequest, _ testInput) (*mcp.CallToolResult, testOutput, error) {
+				return nil, testOutput{}, fmt.Errorf("test error")
+			},
+		)
 
 		_, _, err := handler(context.Background(), nil, testInput{Name: "test"})
 		if err == nil {
@@ -78,9 +87,13 @@ func TestWrapToolHandler(t *testing.T) {
 	})
 
 	t.Run("nil metrics does not panic", func(t *testing.T) {
-		handler := WrapToolHandler[testInput, testOutput](nil, "test_tool", func(ctx context.Context, _ *mcp.CallToolRequest, input testInput) (*mcp.CallToolResult, testOutput, error) {
-			return nil, testOutput{Result: "ok"}, nil
-		})
+		handler := WrapToolHandler[testInput, testOutput](
+			nil,
+			"test_tool",
+			func(_ context.Context, _ *mcp.CallToolRequest, _ testInput) (*mcp.CallToolResult, testOutput, error) {
+				return nil, testOutput{Result: "ok"}, nil
+			},
+		)
 
 		_, _, err := handler(context.Background(), nil, testInput{Name: "test"})
 		if err != nil {
@@ -94,7 +107,7 @@ func TestMetricsMiddleware(t *testing.T) {
 
 	t.Run("active requests gauge works", func(t *testing.T) {
 		m := mustRegisterMetrics(t)
-		handler := MetricsMiddleware(m)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := MetricsMiddleware(m)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -133,9 +146,13 @@ func TestWrapToolHandler_ErrorTypes(t *testing.T) {
 	t.Run("sentinel error wrapping", func(t *testing.T) {
 		m := mustRegisterMetrics(t)
 		sentinelErr := errors.New("search failed")
-		handler := WrapToolHandler[testInput, testOutput](m, "search", func(ctx context.Context, _ *mcp.CallToolRequest, in testInput) (*mcp.CallToolResult, testOutput, error) {
-			return nil, testOutput{}, fmt.Errorf("search: %w", sentinelErr)
-		})
+		handler := WrapToolHandler[testInput, testOutput](
+			m,
+			"search",
+			func(_ context.Context, _ *mcp.CallToolRequest, _ testInput) (*mcp.CallToolResult, testOutput, error) {
+				return nil, testOutput{}, fmt.Errorf("search: %w", sentinelErr)
+			},
+		)
 
 		_, _, err := handler(context.Background(), nil, testInput{Name: "test"})
 		if err == nil {

@@ -25,12 +25,13 @@ func checkBatchSize(body []byte) error {
 	}
 
 	var batch []json.RawMessage
-	if err := json.Unmarshal(trimmed, &batch); err != nil {
-		return nil // malformed JSON will be caught downstream
-	}
+	// Malformed JSON yields a nil batch and is treated as not-a-batch; the
+	// JSON-RPC handler downstream reports the malformed body.
+	_ = json.Unmarshal(trimmed, &batch)
 	if len(batch) > MaxBatchSize {
 		return fmt.Errorf("batch size %d exceeds maximum of %d", len(batch), MaxBatchSize)
 	}
+
 	return nil
 }
 
@@ -58,6 +59,7 @@ func BodyLimitMiddleware(maxBytes int64) func(http.Handler) http.Handler {
 // MaxBytesError returns true if the error is an http.MaxBytesError.
 func MaxBytesError(err error) bool {
 	var maxBytesErr *http.MaxBytesError
+
 	return err != nil && errors.As(err, &maxBytesErr)
 }
 
@@ -78,6 +80,7 @@ func (lrw *loggingResponseWriter) WriteHeader(code int) {
 func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 	n, err := lrw.ResponseWriter.Write(b)
 	lrw.bodySize += n
+
 	return n, err
 }
 
@@ -107,6 +110,7 @@ func mcpRequestMethod(body []byte) string {
 	if req.Method != "" {
 		return req.Method
 	}
+
 	return "no_method"
 }
 
@@ -135,6 +139,7 @@ func SanitizeLog(s string) string {
 		if r >= 0x2066 && r <= 0x2069 { // LRI, RLI, FSI, PDI
 			return -1
 		}
+
 		return r
 	}, s)
 }
@@ -168,6 +173,7 @@ func LoggingMiddleware(logger *logrus.Logger, next http.Handler) http.Handler {
 		if err != nil {
 			logger.WithField("error", err).Error("mcp_log request_error=read_body")
 			http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
+
 			return
 		}
 		r.Body = io.NopCloser(bytes.NewReader(body))
@@ -188,6 +194,7 @@ func LoggingMiddleware(logger *logrus.Logger, next http.Handler) http.Handler {
 				"status":      http.StatusBadRequest,
 			}).Info("mcp_log")
 			http.Error(w, err.Error(), http.StatusBadRequest)
+
 			return
 		}
 

@@ -21,6 +21,7 @@ func newTestLogger(t *testing.T) (*logrus.Logger, *bytes.Buffer) {
 
 	var buf bytes.Buffer
 	logger.SetOutput(&buf)
+
 	return logger, &buf
 }
 
@@ -36,6 +37,7 @@ func decodeLog(t *testing.T, buf *bytes.Buffer) map[string]any {
 	if err := json.Unmarshal([]byte(lines[len(lines)-1]), &entry); err != nil {
 		t.Fatalf("log output is not valid JSON: %v\nraw: %s", err, buf.String())
 	}
+
 	return entry
 }
 
@@ -136,17 +138,17 @@ func TestSlog_LevelFiltering(t *testing.T) {
 		logger := logrus.New()
 		logger.SetLevel(logrus.WarnLevel)
 
-		sl := Slog(logger)
-		if sl.Enabled(context.Background(), slog.LevelDebug) {
+		slogHandler := Slog(logger)
+		if slogHandler.Enabled(context.Background(), slog.LevelDebug) {
 			t.Error("debug should be disabled at warn level")
 		}
-		if sl.Enabled(context.Background(), slog.LevelInfo) {
+		if slogHandler.Enabled(context.Background(), slog.LevelInfo) {
 			t.Error("info should be disabled at warn level")
 		}
-		if !sl.Enabled(context.Background(), slog.LevelWarn) {
+		if !slogHandler.Enabled(context.Background(), slog.LevelWarn) {
 			t.Error("warn should be enabled at warn level")
 		}
-		if !sl.Enabled(context.Background(), slog.LevelError) {
+		if !slogHandler.Enabled(context.Background(), slog.LevelError) {
 			t.Error("error should be enabled at warn level")
 		}
 	})

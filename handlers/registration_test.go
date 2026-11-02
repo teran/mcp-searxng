@@ -19,6 +19,7 @@ type mockSearchRepo struct {
 func (m *mockSearchRepo) Search(ctx context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
 	return m.searchFunc(ctx, params)
 }
+
 func newMockService(repo *mockSearchRepo) *application.SearchService {
 	return application.NewSearchService(repo)
 }
@@ -26,14 +27,14 @@ func newMockService(repo *mockSearchRepo) *application.SearchService {
 func TestRegisterTools(t *testing.T) {
 	t.Parallel()
 
-	t.Run("registers search tool without metrics", func(t *testing.T) {
+	t.Run("registers search tool without metrics", func(_ *testing.T) {
 		srv := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)
 
 		// Should not panic.
 		RegisterTools(srv, nil, testLogger(), nil)
 	})
 
-	t.Run("registers search tool with metrics", func(t *testing.T) {
+	t.Run("registers search tool with metrics", func(_ *testing.T) {
 		reg := prometheus.NewRegistry()
 		m := NewMetrics(reg)
 		srv := mcp.NewServer(&mcp.Implementation{Name: "test"}, nil)

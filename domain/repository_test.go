@@ -13,6 +13,7 @@ type mockRepo struct {
 func (m *mockRepo) Search(ctx context.Context, params SearchParams) (*SearchResponse, error) {
 	return m.searchFunc(ctx, params)
 }
+
 func TestSearchRepositoryInterface(t *testing.T) {
 	t.Parallel()
 

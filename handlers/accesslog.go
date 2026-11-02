@@ -1,3 +1,5 @@
+// Package handlers contains the MCP tool handlers, HTTP middleware and
+// transport-agnostic access-log / metrics wrapping for the server.
 package handlers
 
 import (
@@ -26,6 +28,7 @@ func redactArgs(input any) string {
 	if len(s) > accessLogMaxArgs {
 		s = s[:accessLogMaxArgs] + "..."
 	}
+
 	return s
 }
 
@@ -37,7 +40,9 @@ func redactArgs(input any) string {
 //
 // When the logger is not enabled at InfoLevel the wrapper is a no-op beyond a
 // cheap IsLevelEnabled check, so a disabled logger costs nothing.
-func WrapAccessLog[I, O any](logger *logrus.Logger, source, toolName string, handler mcp.ToolHandlerFor[I, O]) mcp.ToolHandlerFor[I, O] {
+func WrapAccessLog[I, O any](
+	logger *logrus.Logger, source, toolName string, handler mcp.ToolHandlerFor[I, O],
+) mcp.ToolHandlerFor[I, O] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, input I) (*mcp.CallToolResult, O, error) {
 		start := time.Now()
 		result, output, err := handler(ctx, req, input)
@@ -57,6 +62,7 @@ func WrapAccessLog[I, O any](logger *logrus.Logger, source, toolName string, han
 			}
 			logger.WithFields(fields).Info("mcp_tool")
 		}
+
 		return result, output, err
 	}
 }

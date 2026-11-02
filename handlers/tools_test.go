@@ -21,6 +21,7 @@ import (
 func newTestLogger() *logrus.Logger {
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
+
 	return logger
 }
 
@@ -31,618 +32,636 @@ type mockSearchRepo struct {
 func (m *mockSearchRepo) Search(ctx context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
 	return m.searchFunc(ctx, params)
 }
+
 func newMockService(repo *mockSearchRepo) *application.SearchService {
 	return application.NewSearchService(repo)
 }
 
-func TestNewSearchHandler(t *testing.T) { //nolint:gocognit
+func TestNewSearchHandler(t *testing.T) {
 	t.Parallel()
 
-	t.Run("basic search returns results", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query: params.Query,
-					Results: []domain.SearchResult{
-						{
-							Title:   "Test Result",
-							URL:     "https://example.com",
-							Content: "Test content",
-							Engine:  "google",
-						},
-					},
-					NumberOfResults: 1,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
-
-		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query: "test query",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if result != nil {
-			t.Errorf("expected nil CallToolResult, got %v", result)
-		}
-		if output.Query != "test query" {
-			t.Errorf("Query = %q, want %q", output.Query, "test query")
-		}
-		if len(output.Results) != 1 {
-			t.Fatalf("len(Results) = %d, want 1", len(output.Results))
-		}
-		if output.Results[0].Title != "Test Result" {
-			t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "Test Result")
-		}
-		if output.Results[0].Engine != "google" {
-			t.Errorf("Results[0].Engine = %q, want %q", output.Results[0].Engine, "google")
-		}
-	})
-
-	t.Run("search with all parameters", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if params.Query != "test" {
-					t.Errorf("Query = %q, want %q", params.Query, "test")
-				}
-				if len(params.Categories) != 1 || params.Categories[0] != "news" {
-					t.Errorf("Categories = %v, want [news]", params.Categories)
-				}
-				if params.Language != "en-US" {
-					t.Errorf("Language = %q, want %q", params.Language, "en-US")
-				}
-				if params.Page != 3 {
-					t.Errorf("Page = %d, want 3", params.Page)
-				}
-				if params.TimeRange != "year" {
-					t.Errorf("TimeRange = %q, want %q", params.TimeRange, "year")
-				}
-				if params.SafeSearch != 2 {
-					t.Errorf("SafeSearch = %d, want 2", params.SafeSearch)
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
-
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query:      "test",
-			Categories: []string{"news"},
-			Language:   "en-US",
-			Page:       3,
-			TimeRange:  "year",
-			SafeSearch: 2,
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if output.Query != "test" {
-			t.Errorf("Query = %q, want %q", output.Query, "test")
-		}
-	})
-
-	t.Run("page defaults to 1 when not set", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if params.Page != 1 {
-					t.Errorf("Page = %d, want 1", params.Page)
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query: "test",
-			Page:  0,
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-	})
-
-	t.Run("repository error propagates", func(t *testing.T) {
-		expectedErr := errors.New("search failed")
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
-				return nil, expectedErr
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query: "test",
-		})
-
-		if err == nil {
-			t.Fatal("handler expected error, got nil")
-		}
-	})
-
-	t.Run("empty results not nil", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
-
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if output.Results == nil {
-			t.Errorf("Results = nil, want non-nil empty slice")
-		}
-		if len(output.Results) != 0 {
-			t.Errorf("len(Results) = %d, want 0", len(output.Results))
-		}
-	})
+	t.Run("basic search returns results", testNewSearchHandlerBasic)
+	t.Run("search with all parameters", testNewSearchHandlerAllParams)
+	t.Run("page defaults to 1 when not set", testNewSearchHandlerPageDefault)
+	t.Run("repository error propagates", testNewSearchHandlerRepoError)
+	t.Run("empty results not nil", testNewSearchHandlerEmptyResults)
 }
 
-func TestNewSearchNewsHandler(t *testing.T) { //nolint:gocognit
+func testNewSearchHandlerBasic(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query: params.Query,
+				Results: []domain.SearchResult{
+					{
+						Title:   "Test Result",
+						URL:     "https://example.com",
+						Content: "Test content",
+						Engine:  "google",
+					},
+				},
+				NumberOfResults: 1,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
+
+	result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query: "test query",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil CallToolResult, got %v", result)
+	}
+	if output.Query != "test query" {
+		t.Errorf("Query = %q, want %q", output.Query, "test query")
+	}
+	if len(output.Results) != 1 {
+		t.Fatalf("len(Results) = %d, want 1", len(output.Results))
+	}
+	if output.Results[0].Title != "Test Result" {
+		t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "Test Result")
+	}
+	if output.Results[0].Engine != "google" {
+		t.Errorf("Results[0].Engine = %q, want %q", output.Results[0].Engine, "google")
+	}
+}
+
+func testNewSearchHandlerAllParams(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if params.Query != "test" {
+				t.Errorf("Query = %q, want %q", params.Query, "test")
+			}
+			if len(params.Categories) != 1 || params.Categories[0] != "news" {
+				t.Errorf("Categories = %v, want [news]", params.Categories)
+			}
+			if params.Language != "en-US" {
+				t.Errorf("Language = %q, want %q", params.Language, "en-US")
+			}
+			if params.Page != 3 {
+				t.Errorf("Page = %d, want 3", params.Page)
+			}
+			if params.TimeRange != "year" {
+				t.Errorf("TimeRange = %q, want %q", params.TimeRange, "year")
+			}
+			if params.SafeSearch != 2 {
+				t.Errorf("SafeSearch = %d, want 2", params.SafeSearch)
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
+
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query:      "test",
+		Categories: []string{"news"},
+		Language:   "en-US",
+		Page:       3,
+		TimeRange:  "year",
+		SafeSearch: 2,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if output.Query != "test" {
+		t.Errorf("Query = %q, want %q", output.Query, "test")
+	}
+}
+
+func testNewSearchHandlerPageDefault(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if params.Page != 1 {
+				t.Errorf("Page = %d, want 1", params.Page)
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query: "test",
+		Page:  0,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func testNewSearchHandlerRepoError(t *testing.T) {
+	expectedErr := errors.New("search failed")
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return nil, expectedErr
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query: "test",
+	})
+
+	if err == nil {
+		t.Fatal("handler expected error, got nil")
+	}
+}
+
+func testNewSearchHandlerEmptyResults(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
+
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query: "test",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if output.Results == nil {
+		t.Errorf("Results = nil, want non-nil empty slice")
+	}
+	if len(output.Results) != 0 {
+		t.Errorf("len(Results) = %d, want 0", len(output.Results))
+	}
+}
+
+func TestNewSearchNewsHandler(t *testing.T) {
 	t.Parallel()
 
-	t.Run("basic news search returns results", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query: params.Query,
-					Results: []domain.SearchResult{
-						{
-							Title:   "News Article",
-							URL:     "https://news.example.com",
-							Content: "News content",
-							Engine:  "google",
-						},
+	t.Run("basic news search returns results", testNewSearchNewsHandlerBasic)
+	t.Run("news search passes preset categories and time_range", testNewSearchNewsHandlerPresets)
+	t.Run("news search with all parameters", testNewSearchNewsHandlerAllParams)
+	t.Run("news search error propagates", testNewSearchNewsHandlerRepoError)
+}
+
+func testNewSearchNewsHandlerBasic(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query: params.Query,
+				Results: []domain.SearchResult{
+					{
+						Title:   "News Article",
+						URL:     "https://news.example.com",
+						Content: "News content",
+						Engine:  "google",
 					},
-					NumberOfResults: 1,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
+				},
+				NumberOfResults: 1,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 
-		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
-			Query: "test news",
-		})
+	result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
+		Query: "test news",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil CallToolResult, got %v", result)
+	}
+	if output.Query != "test news" {
+		t.Errorf("Query = %q, want %q", output.Query, "test news")
+	}
+	if len(output.Results) != 1 {
+		t.Fatalf("len(Results) = %d, want 1", len(output.Results))
+	}
+	if output.Results[0].Title != "News Article" {
+		t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "News Article")
+	}
+}
 
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if result != nil {
-			t.Errorf("expected nil CallToolResult, got %v", result)
-		}
-		if output.Query != "test news" {
-			t.Errorf("Query = %q, want %q", output.Query, "test news")
-		}
-		if len(output.Results) != 1 {
-			t.Fatalf("len(Results) = %d, want 1", len(output.Results))
-		}
-		if output.Results[0].Title != "News Article" {
-			t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "News Article")
-		}
+func testNewSearchNewsHandlerPresets(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if len(params.Categories) != 1 || params.Categories[0] != "news" {
+				t.Errorf("Categories = %v, want [news]", params.Categories)
+			}
+			if params.TimeRange != "day" {
+				t.Errorf("TimeRange = %q, want %q", params.TimeRange, "day")
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
+		Query: "test",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func testNewSearchNewsHandlerAllParams(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if params.Query != "test" {
+				t.Errorf("Query = %q, want %q", params.Query, "test")
+			}
+			if params.Language != "ru-RU" {
+				t.Errorf("Language = %q, want %q", params.Language, "ru-RU")
+			}
+			if params.Page != 2 {
+				t.Errorf("Page = %d, want 2", params.Page)
+			}
+			if params.SafeSearch != 1 {
+				t.Errorf("SafeSearch = %d, want 1", params.SafeSearch)
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
+		Query:      "test",
+		Language:   "ru-RU",
+		Page:       2,
+		SafeSearch: 1,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func testNewSearchNewsHandlerRepoError(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return nil, errors.New("upstream error")
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
+		Query: "test",
 	})
 
-	t.Run("news search passes preset categories and time_range", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if len(params.Categories) != 1 || params.Categories[0] != "news" {
-					t.Errorf("Categories = %v, want [news]", params.Categories)
-				}
-				if params.TimeRange != "day" {
-					t.Errorf("TimeRange = %q, want %q", params.TimeRange, "day")
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-	})
-
-	t.Run("news search with all parameters", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if params.Query != "test" {
-					t.Errorf("Query = %q, want %q", params.Query, "test")
-				}
-				if params.Language != "ru-RU" {
-					t.Errorf("Language = %q, want %q", params.Language, "ru-RU")
-				}
-				if params.Page != 2 {
-					t.Errorf("Page = %d, want 2", params.Page)
-				}
-				if params.SafeSearch != 1 {
-					t.Errorf("SafeSearch = %d, want 1", params.SafeSearch)
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
-			Query:      "test",
-			Language:   "ru-RU",
-			Page:       2,
-			SafeSearch: 1,
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-	})
-
-	t.Run("news search error propagates", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
-				return nil, errors.New("upstream error")
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
-			Query: "test",
-		})
-
-		if err == nil {
-			t.Fatal("handler expected error, got nil")
-		}
-	})
+	if err == nil {
+		t.Fatal("handler expected error, got nil")
+	}
 }
 
 func TestNewSearchHandler_MaxResults(t *testing.T) {
 	t.Parallel()
 
-	makeMock := func(numResults int) *mockSearchRepo {
-		results := make([]domain.SearchResult, numResults)
-		for i := range numResults {
-			results[i] = domain.SearchResult{
-				Title:   fmt.Sprintf("Result %d", i+1),
-				URL:     fmt.Sprintf("https://example.com/%d", i+1),
-				Content: fmt.Sprintf("Content %d", i+1),
-				Engine:  "google",
-			}
-		}
-		return &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:           params.Query,
-					Results:         results,
-					NumberOfResults: numResults,
-				}, nil
-			},
+	t.Run("max_results truncates results", testNewSearchHandlerMaxResultsTruncates)
+	t.Run("max_results nil returns all results", testNewSearchHandlerMaxResultsNil)
+	t.Run("max_results larger than available returns all results", testNewSearchHandlerMaxResultsLarger)
+	t.Run("max_results zero returns no results", testNewSearchHandlerMaxResultsZero)
+}
+
+func makeSearchRepo(numResults int) *mockSearchRepo {
+	results := make([]domain.SearchResult, numResults)
+	for i := range numResults {
+		results[i] = domain.SearchResult{
+			Title:   fmt.Sprintf("Result %d", i+1),
+			URL:     fmt.Sprintf("https://example.com/%d", i+1),
+			Content: fmt.Sprintf("Content %d", i+1),
+			Engine:  "google",
 		}
 	}
 
-	t.Run("max_results truncates results", func(t *testing.T) {
-		svc := newMockService(makeMock(10))
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
+	return &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:           params.Query,
+				Results:         results,
+				NumberOfResults: numResults,
+			}, nil
+		},
+	}
+}
 
-		maxResults := uint64(3)
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query:      "test",
-			MaxResults: &maxResults,
-		})
+func testNewSearchHandlerMaxResultsTruncates(t *testing.T) {
+	svc := newMockService(makeSearchRepo(10))
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 3 {
-			t.Errorf("len(Results) = %d, want 3", len(output.Results))
-		}
-		if output.Results[0].Title != "Result 1" {
-			t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "Result 1")
-		}
-		if output.Results[2].Title != "Result 3" {
-			t.Errorf("Results[2].Title = %q, want %q", output.Results[2].Title, "Result 3")
-		}
+	maxResults := uint64(3)
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query:      "test",
+		MaxResults: &maxResults,
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 3 {
+		t.Errorf("len(Results) = %d, want 3", len(output.Results))
+	}
+	if output.Results[0].Title != "Result 1" {
+		t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "Result 1")
+	}
+	if output.Results[2].Title != "Result 3" {
+		t.Errorf("Results[2].Title = %q, want %q", output.Results[2].Title, "Result 3")
+	}
+}
 
-	t.Run("max_results nil returns all results", func(t *testing.T) {
-		svc := newMockService(makeMock(10))
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
+func testNewSearchHandlerMaxResultsNil(t *testing.T) {
+	svc := newMockService(makeSearchRepo(10))
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 10 {
-			t.Errorf("len(Results) = %d, want 10", len(output.Results))
-		}
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query: "test",
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 10 {
+		t.Errorf("len(Results) = %d, want 10", len(output.Results))
+	}
+}
 
-	t.Run("max_results larger than available returns all results", func(t *testing.T) {
-		svc := newMockService(makeMock(3))
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
+func testNewSearchHandlerMaxResultsLarger(t *testing.T) {
+	svc := newMockService(makeSearchRepo(3))
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
-		maxResults := uint64(100)
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query:      "test",
-			MaxResults: &maxResults,
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 3 {
-			t.Errorf("len(Results) = %d, want 3", len(output.Results))
-		}
+	maxResults := uint64(100)
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query:      "test",
+		MaxResults: &maxResults,
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 3 {
+		t.Errorf("len(Results) = %d, want 3", len(output.Results))
+	}
+}
 
-	t.Run("max_results zero returns no results", func(t *testing.T) {
-		svc := newMockService(makeMock(10))
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
+func testNewSearchHandlerMaxResultsZero(t *testing.T) {
+	svc := newMockService(makeSearchRepo(10))
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
-		maxResults := uint64(0)
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query:      "test",
-			MaxResults: &maxResults,
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 0 {
-			t.Errorf("len(Results) = %d, want 0", len(output.Results))
-		}
+	maxResults := uint64(0)
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query:      "test",
+		MaxResults: &maxResults,
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 0 {
+		t.Errorf("len(Results) = %d, want 0", len(output.Results))
+	}
 }
 
 func TestNewSearchNewsHandler_MaxResults(t *testing.T) {
 	t.Parallel()
 
-	t.Run("news max_results truncates results", func(t *testing.T) {
-		results := make([]domain.SearchResult, 10)
-		for i := range 10 {
-			results[i] = domain.SearchResult{
-				Title:   fmt.Sprintf("News %d", i+1),
-				URL:     fmt.Sprintf("https://news.example.com/%d", i+1),
-				Content: fmt.Sprintf("Content %d", i+1),
-				Engine:  "google",
-			}
-		}
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: results,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
+	t.Run("news max_results truncates results", testNewSearchNewsHandlerMaxResultsTruncates)
+	t.Run("news max_results nil returns all results", testNewSearchNewsHandlerMaxResultsNil)
+}
 
-		maxResults := uint64(2)
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
-			Query:      "test",
-			MaxResults: &maxResults,
-		})
+func testNewSearchNewsHandlerMaxResultsTruncates(t *testing.T) {
+	results := make([]domain.SearchResult, 10)
+	for i := range 10 {
+		results[i] = domain.SearchResult{
+			Title:   fmt.Sprintf("News %d", i+1),
+			URL:     fmt.Sprintf("https://news.example.com/%d", i+1),
+			Content: fmt.Sprintf("Content %d", i+1),
+			Engine:  "google",
+		}
+	}
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: results,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 2 {
-			t.Errorf("len(Results) = %d, want 2", len(output.Results))
-		}
-		if output.Results[0].Title != "News 1" {
-			t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "News 1")
-		}
+	maxResults := uint64(2)
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
+		Query:      "test",
+		MaxResults: &maxResults,
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 2 {
+		t.Errorf("len(Results) = %d, want 2", len(output.Results))
+	}
+	if output.Results[0].Title != "News 1" {
+		t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "News 1")
+	}
+}
 
-	t.Run("news max_results nil returns all results", func(t *testing.T) {
-		results := make([]domain.SearchResult, 5)
-		for i := range 5 {
-			results[i] = domain.SearchResult{
-				Title:   fmt.Sprintf("News %d", i+1),
-				URL:     fmt.Sprintf("https://news.example.com/%d", i+1),
-				Content: fmt.Sprintf("Content %d", i+1),
-				Engine:  "google",
-			}
+func testNewSearchNewsHandlerMaxResultsNil(t *testing.T) {
+	results := make([]domain.SearchResult, 5)
+	for i := range 5 {
+		results[i] = domain.SearchResult{
+			Title:   fmt.Sprintf("News %d", i+1),
+			URL:     fmt.Sprintf("https://news.example.com/%d", i+1),
+			Content: fmt.Sprintf("Content %d", i+1),
+			Engine:  "google",
 		}
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: results,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
+	}
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: results,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchNewsHandler(newTestLogger(), svc)
 
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 5 {
-			t.Errorf("len(Results) = %d, want 5", len(output.Results))
-		}
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchNewsInput{
+		Query: "test",
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 5 {
+		t.Errorf("len(Results) = %d, want 5", len(output.Results))
+	}
 }
 
 func TestNewSearchImagesHandler_MaxResults(t *testing.T) {
 	t.Parallel()
 
-	t.Run("images max_results truncates results", func(t *testing.T) {
-		results := make([]domain.SearchResult, 7)
-		for i := range 7 {
-			results[i] = domain.SearchResult{
-				Title:   fmt.Sprintf("Image %d", i+1),
-				URL:     fmt.Sprintf("https://img.example.com/%d", i+1),
-				Content: fmt.Sprintf("Content %d", i+1),
-				Engine:  "google",
-			}
-		}
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: results,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
+	t.Run("images max_results truncates results", testNewSearchImagesHandlerMaxResultsTruncates)
+	t.Run("images max_results nil returns all results", testNewSearchImagesHandlerMaxResultsNil)
+}
 
-		maxResults := uint64(4)
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
-			Query:      "test",
-			MaxResults: &maxResults,
-		})
+func testNewSearchImagesHandlerMaxResultsTruncates(t *testing.T) {
+	results := make([]domain.SearchResult, 7)
+	for i := range 7 {
+		results[i] = domain.SearchResult{
+			Title:   fmt.Sprintf("Image %d", i+1),
+			URL:     fmt.Sprintf("https://img.example.com/%d", i+1),
+			Content: fmt.Sprintf("Content %d", i+1),
+			Engine:  "google",
+		}
+	}
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: results,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 4 {
-			t.Errorf("len(Results) = %d, want 4", len(output.Results))
-		}
+	maxResults := uint64(4)
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
+		Query:      "test",
+		MaxResults: &maxResults,
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 4 {
+		t.Errorf("len(Results) = %d, want 4", len(output.Results))
+	}
+}
 
-	t.Run("images max_results nil returns all results", func(t *testing.T) {
-		results := make([]domain.SearchResult, 3)
-		for i := range 3 {
-			results[i] = domain.SearchResult{
-				Title:   fmt.Sprintf("Image %d", i+1),
-				URL:     fmt.Sprintf("https://img.example.com/%d", i+1),
-				Content: fmt.Sprintf("Content %d", i+1),
-				Engine:  "google",
-			}
+func testNewSearchImagesHandlerMaxResultsNil(t *testing.T) {
+	results := make([]domain.SearchResult, 3)
+	for i := range 3 {
+		results[i] = domain.SearchResult{
+			Title:   fmt.Sprintf("Image %d", i+1),
+			URL:     fmt.Sprintf("https://img.example.com/%d", i+1),
+			Content: fmt.Sprintf("Content %d", i+1),
+			Engine:  "google",
 		}
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: results,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
+	}
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: results,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 3 {
-			t.Errorf("len(Results) = %d, want 3", len(output.Results))
-		}
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
+		Query: "test",
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 3 {
+		t.Errorf("len(Results) = %d, want 3", len(output.Results))
+	}
 }
 
 func TestSearchHelper_MaxResults_PreservesOtherFields(t *testing.T) {
 	t.Parallel()
 
-	t.Run("max_results truncates results but preserves NumberOfResults, answers, suggestions, infoboxes", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				results := make([]domain.SearchResult, 10)
-				for i := range 10 {
-					results[i] = domain.SearchResult{
-						Title:   fmt.Sprintf("Result %d", i+1),
-						URL:     fmt.Sprintf("https://example.com/%d", i+1),
-						Content: fmt.Sprintf("Content %d", i+1),
-						Engine:  "google",
-					}
-				}
-				return &domain.SearchResponse{
-					Query:           params.Query,
-					Results:         results,
-					NumberOfResults: 10,
-					Answers:         []domain.AnswerResult{"answer one", "answer two"},
-					Suggestions:     []domain.SuggestionResult{"suggestion one", "suggestion two"},
-					Infoboxes: []domain.Infobox{
-						{
-							ID:      "infobox-1",
-							Content: "Infobox content",
-							Engine:  "wikipedia",
-						},
-					},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchHandler(newTestLogger(), svc)
+	t.Run("max_results truncates results but preserves other fields", testSearchHelperMaxResultsPreserves)
+}
 
-		maxResults := uint64(3)
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
-			Query:      "test",
-			MaxResults: &maxResults,
-		})
+func testSearchHelperMaxResultsPreserves(t *testing.T) {
+	svc := newMockService(makePreserveRepo())
+	handler := handlers.NewSearchHandler(newTestLogger(), svc)
 
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 3 {
-			t.Errorf("len(Results) = %d, want 3", len(output.Results))
-		}
-		if output.NumberOfResults != 10 {
-			t.Errorf("NumberOfResults = %d, want 10 (must not be truncated)", output.NumberOfResults)
-		}
-		if len(output.Answers) != 2 {
-			t.Errorf("len(Answers) = %d, want 2", len(output.Answers))
-		}
-		if output.Answers[0] != "answer one" {
-			t.Errorf("Answers[0] = %q, want %q", output.Answers[0], "answer one")
-		}
-		if len(output.Suggestions) != 2 {
-			t.Errorf("len(Suggestions) = %d, want 2", len(output.Suggestions))
-		}
-		if output.Suggestions[0] != "suggestion one" {
-			t.Errorf("Suggestions[0] = %q, want %q", output.Suggestions[0], "suggestion one")
-		}
-		if len(output.Infoboxes) != 1 {
-			t.Errorf("len(Infoboxes) = %d, want 1", len(output.Infoboxes))
-		}
-		if output.Infoboxes[0].ID != "infobox-1" {
-			t.Errorf("Infoboxes[0].ID = %q, want %q", output.Infoboxes[0].ID, "infobox-1")
-		}
+	maxResults := uint64(3)
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchInput{
+		Query:      "test",
+		MaxResults: &maxResults,
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 3 {
+		t.Errorf("len(Results) = %d, want 3", len(output.Results))
+	}
+	if output.NumberOfResults != 10 {
+		t.Errorf("NumberOfResults = %d, want 10 (must not be truncated)", output.NumberOfResults)
+	}
+	if len(output.Answers) != 2 {
+		t.Errorf("len(Answers) = %d, want 2", len(output.Answers))
+	}
+	if output.Answers[0] != "answer one" {
+		t.Errorf("Answers[0] = %q, want %q", output.Answers[0], "answer one")
+	}
+	if len(output.Suggestions) != 2 {
+		t.Errorf("len(Suggestions) = %d, want 2", len(output.Suggestions))
+	}
+	if output.Suggestions[0] != "suggestion one" {
+		t.Errorf("Suggestions[0] = %q, want %q", output.Suggestions[0], "suggestion one")
+	}
+	if len(output.Infoboxes) != 1 {
+		t.Errorf("len(Infoboxes) = %d, want 1", len(output.Infoboxes))
+	}
+	if output.Infoboxes[0].ID != "infobox-1" {
+		t.Errorf("Infoboxes[0].ID = %q, want %q", output.Infoboxes[0].ID, "infobox-1")
+	}
+}
+
+func makePreserveRepo() *mockSearchRepo {
+	return &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			results := make([]domain.SearchResult, 10)
+			for i := range 10 {
+				results[i] = domain.SearchResult{
+					Title:   fmt.Sprintf("Result %d", i+1),
+					URL:     fmt.Sprintf("https://example.com/%d", i+1),
+					Content: fmt.Sprintf("Content %d", i+1),
+					Engine:  "google",
+				}
+			}
+
+			return &domain.SearchResponse{
+				Query:           params.Query,
+				Results:         results,
+				NumberOfResults: 10,
+				Answers:         []domain.AnswerResult{"answer one", "answer two"},
+				Suggestions:     []domain.SuggestionResult{"suggestion one", "suggestion two"},
+				Infoboxes: []domain.Infobox{
+					{
+						ID:      "infobox-1",
+						Content: "Infobox content",
+						Engine:  "wikipedia",
+					},
+				},
+			}, nil
+		},
+	}
 }
 
 func TestSearchHelper_InfoboxAttributesAndURLs(t *testing.T) {
@@ -683,423 +702,433 @@ func TestSearchHelper_InfoboxAttributesAndURLs(t *testing.T) {
 	if len(output.Infoboxes) != 1 {
 		t.Fatalf("len(Infoboxes) = %d, want 1", len(output.Infoboxes))
 	}
-	ib := output.Infoboxes[0]
+	infobox := output.Infoboxes[0]
 
-	if len(ib.Attributes) != 2 {
-		t.Fatalf("len(Attributes) = %d, want 2", len(ib.Attributes))
+	if len(infobox.Attributes) != 2 {
+		t.Fatalf("len(Attributes) = %d, want 2", len(infobox.Attributes))
 	}
-	if ib.Attributes[0].Key != "Population" || ib.Attributes[0].Value != "8M" {
-		t.Errorf("Attributes[0] = %+v, want {Population 8M}", ib.Attributes[0])
+	if infobox.Attributes[0].Key != "Population" || infobox.Attributes[0].Value != "8M" {
+		t.Errorf("Attributes[0] = %+v, want {Population 8M}", infobox.Attributes[0])
 	}
-	if ib.Attributes[1].Key != "Area" || ib.Attributes[1].Value != "2,000 km²" {
-		t.Errorf("Attributes[1] = %+v, want {Area 2,000 km²}", ib.Attributes[1])
+	if infobox.Attributes[1].Key != "Area" || infobox.Attributes[1].Value != "2,000 km²" {
+		t.Errorf("Attributes[1] = %+v, want {Area 2,000 km²}", infobox.Attributes[1])
 	}
 
-	if len(ib.URLs) != 2 {
-		t.Fatalf("len(URLs) = %d, want 2", len(ib.URLs))
+	if len(infobox.URLs) != 2 {
+		t.Fatalf("len(URLs) = %d, want 2", len(infobox.URLs))
 	}
-	if ib.URLs[0].Title != "Link 1" || ib.URLs[0].URL != "https://example.com/1" {
-		t.Errorf("URLs[0] = %+v, want {Link 1 https://example.com/1}", ib.URLs[0])
+	if infobox.URLs[0].Title != "Link 1" || infobox.URLs[0].URL != "https://example.com/1" {
+		t.Errorf("URLs[0] = %+v, want {Link 1 https://example.com/1}", infobox.URLs[0])
 	}
-	if ib.URLs[1].Title != "Link 2" || ib.URLs[1].URL != "https://example.com/2" {
-		t.Errorf("URLs[1] = %+v, want {Link 2 https://example.com/2}", ib.URLs[1])
+	if infobox.URLs[1].Title != "Link 2" || infobox.URLs[1].URL != "https://example.com/2" {
+		t.Errorf("URLs[1] = %+v, want {Link 2 https://example.com/2}", infobox.URLs[1])
 	}
 }
 
-func TestNewSearchVideosHandler(t *testing.T) { //nolint:gocognit
+func TestNewSearchVideosHandler(t *testing.T) {
 	t.Parallel()
 
-	t.Run("basic video search returns results", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query: params.Query,
-					Results: []domain.SearchResult{
-						{
-							Title:   "Video Title",
-							URL:     "https://video.example.com",
-							Content: "Video content",
-							Engine:  "google",
-						},
+	t.Run("basic video search returns results", testNewSearchVideosHandlerBasic)
+	t.Run("video search passes preset categories", testNewSearchVideosHandlerPresets)
+	t.Run("video search with all parameters", testNewSearchVideosHandlerAllParams)
+	t.Run("video search error propagates", testNewSearchVideosHandlerRepoError)
+}
+
+func testNewSearchVideosHandlerBasic(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query: params.Query,
+				Results: []domain.SearchResult{
+					{
+						Title:   "Video Title",
+						URL:     "https://video.example.com",
+						Content: "Video content",
+						Engine:  "google",
 					},
-					NumberOfResults: 1,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
+				},
+				NumberOfResults: 1,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
 
-		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
-			Query: "test video",
-		})
+	result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
+		Query: "test video",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil CallToolResult, got %v", result)
+	}
+	if output.Query != "test video" {
+		t.Errorf("Query = %q, want %q", output.Query, "test video")
+	}
+	if len(output.Results) != 1 {
+		t.Fatalf("len(Results) = %d, want 1", len(output.Results))
+	}
+	if output.Results[0].Title != "Video Title" {
+		t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "Video Title")
+	}
+}
 
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if result != nil {
-			t.Errorf("expected nil CallToolResult, got %v", result)
-		}
-		if output.Query != "test video" {
-			t.Errorf("Query = %q, want %q", output.Query, "test video")
-		}
-		if len(output.Results) != 1 {
-			t.Fatalf("len(Results) = %d, want 1", len(output.Results))
-		}
-		if output.Results[0].Title != "Video Title" {
-			t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "Video Title")
-		}
+func testNewSearchVideosHandlerPresets(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if len(params.Categories) != 1 || params.Categories[0] != "videos" {
+				t.Errorf("Categories = %v, want [videos]", params.Categories)
+			}
+			if params.TimeRange != "" {
+				t.Errorf("TimeRange = %q, want empty", params.TimeRange)
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
+		Query: "test",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func testNewSearchVideosHandlerAllParams(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if params.Query != "test" {
+				t.Errorf("Query = %q, want %q", params.Query, "test")
+			}
+			if params.Language != "fr" {
+				t.Errorf("Language = %q, want %q", params.Language, "fr")
+			}
+			if params.Page != 5 {
+				t.Errorf("Page = %d, want 5", params.Page)
+			}
+			if params.SafeSearch != 2 {
+				t.Errorf("SafeSearch = %d, want 2", params.SafeSearch)
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
+		Query:      "test",
+		Language:   "fr",
+		Page:       5,
+		SafeSearch: 2,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func testNewSearchVideosHandlerRepoError(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return nil, errors.New("upstream error")
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
+		Query: "test",
 	})
 
-	t.Run("video search passes preset categories", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if len(params.Categories) != 1 || params.Categories[0] != "videos" {
-					t.Errorf("Categories = %v, want [videos]", params.Categories)
-				}
-				if params.TimeRange != "" {
-					t.Errorf("TimeRange = %q, want empty", params.TimeRange)
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-	})
-
-	t.Run("video search with all parameters", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if params.Query != "test" {
-					t.Errorf("Query = %q, want %q", params.Query, "test")
-				}
-				if params.Language != "fr" {
-					t.Errorf("Language = %q, want %q", params.Language, "fr")
-				}
-				if params.Page != 5 {
-					t.Errorf("Page = %d, want 5", params.Page)
-				}
-				if params.SafeSearch != 2 {
-					t.Errorf("SafeSearch = %d, want 2", params.SafeSearch)
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
-			Query:      "test",
-			Language:   "fr",
-			Page:       5,
-			SafeSearch: 2,
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-	})
-
-	t.Run("video search error propagates", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
-				return nil, errors.New("upstream error")
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
-			Query: "test",
-		})
-
-		if err == nil {
-			t.Fatal("handler expected error, got nil")
-		}
-	})
+	if err == nil {
+		t.Fatal("handler expected error, got nil")
+	}
 }
 
 func TestNewSearchVideosHandler_MaxResults(t *testing.T) {
 	t.Parallel()
 
-	t.Run("videos max_results truncates results", func(t *testing.T) {
-		results := make([]domain.SearchResult, 7)
-		for i := range 7 {
-			results[i] = domain.SearchResult{
-				Title:   fmt.Sprintf("Video %d", i+1),
-				URL:     fmt.Sprintf("https://video.example.com/%d", i+1),
-				Content: fmt.Sprintf("Content %d", i+1),
-				Engine:  "google",
-			}
-		}
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: results,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
-
-		maxResults := uint64(4)
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
-			Query:      "test",
-			MaxResults: &maxResults,
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 4 {
-			t.Errorf("len(Results) = %d, want 4", len(output.Results))
-		}
-	})
-
-	t.Run("videos max_results nil returns all results", func(t *testing.T) {
-		results := make([]domain.SearchResult, 3)
-		for i := range 3 {
-			results[i] = domain.SearchResult{
-				Title:   fmt.Sprintf("Video %d", i+1),
-				URL:     fmt.Sprintf("https://video.example.com/%d", i+1),
-				Content: fmt.Sprintf("Content %d", i+1),
-				Engine:  "google",
-			}
-		}
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: results,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
-
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 3 {
-			t.Errorf("len(Results) = %d, want 3", len(output.Results))
-		}
-	})
+	t.Run("videos max_results truncates results", testNewSearchVideosHandlerMaxResultsTruncates)
+	t.Run("videos max_results nil returns all results", testNewSearchVideosHandlerMaxResultsNil)
 }
 
-func TestNewSearchMusicHandler(t *testing.T) { //nolint:gocognit
+func testNewSearchVideosHandlerMaxResultsTruncates(t *testing.T) {
+	results := make([]domain.SearchResult, 7)
+	for i := range 7 {
+		results[i] = domain.SearchResult{
+			Title:   fmt.Sprintf("Video %d", i+1),
+			URL:     fmt.Sprintf("https://video.example.com/%d", i+1),
+			Content: fmt.Sprintf("Content %d", i+1),
+			Engine:  "google",
+		}
+	}
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: results,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
+
+	maxResults := uint64(4)
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
+		Query:      "test",
+		MaxResults: &maxResults,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 4 {
+		t.Errorf("len(Results) = %d, want 4", len(output.Results))
+	}
+}
+
+func testNewSearchVideosHandlerMaxResultsNil(t *testing.T) {
+	results := make([]domain.SearchResult, 3)
+	for i := range 3 {
+		results[i] = domain.SearchResult{
+			Title:   fmt.Sprintf("Video %d", i+1),
+			URL:     fmt.Sprintf("https://video.example.com/%d", i+1),
+			Content: fmt.Sprintf("Content %d", i+1),
+			Engine:  "google",
+		}
+	}
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: results,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchVideosHandler(newTestLogger(), svc)
+
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchVideosInput{
+		Query: "test",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 3 {
+		t.Errorf("len(Results) = %d, want 3", len(output.Results))
+	}
+}
+
+func TestNewSearchMusicHandler(t *testing.T) {
 	t.Parallel()
 
-	t.Run("basic music search returns results", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query: params.Query,
-					Results: []domain.SearchResult{
-						{
-							Title:   "Music Title",
-							URL:     "https://music.example.com",
-							Content: "Music content",
-							Engine:  "google",
-						},
+	t.Run("basic music search returns results", testNewSearchMusicHandlerBasic)
+	t.Run("music search passes preset categories", testNewSearchMusicHandlerPresets)
+	t.Run("music search with all parameters", testNewSearchMusicHandlerAllParams)
+	t.Run("music search error propagates", testNewSearchMusicHandlerRepoError)
+}
+
+func testNewSearchMusicHandlerBasic(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query: params.Query,
+				Results: []domain.SearchResult{
+					{
+						Title:   "Music Title",
+						URL:     "https://music.example.com",
+						Content: "Music content",
+						Engine:  "google",
 					},
-					NumberOfResults: 1,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
+				},
+				NumberOfResults: 1,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 
-		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
-			Query: "test music",
-		})
+	result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
+		Query: "test music",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil CallToolResult, got %v", result)
+	}
+	if output.Query != "test music" {
+		t.Errorf("Query = %q, want %q", output.Query, "test music")
+	}
+	if len(output.Results) != 1 {
+		t.Fatalf("len(Results) = %d, want 1", len(output.Results))
+	}
+	if output.Results[0].Title != "Music Title" {
+		t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "Music Title")
+	}
+}
 
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if result != nil {
-			t.Errorf("expected nil CallToolResult, got %v", result)
-		}
-		if output.Query != "test music" {
-			t.Errorf("Query = %q, want %q", output.Query, "test music")
-		}
-		if len(output.Results) != 1 {
-			t.Fatalf("len(Results) = %d, want 1", len(output.Results))
-		}
-		if output.Results[0].Title != "Music Title" {
-			t.Errorf("Results[0].Title = %q, want %q", output.Results[0].Title, "Music Title")
-		}
+func testNewSearchMusicHandlerPresets(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if len(params.Categories) != 1 || params.Categories[0] != "music" {
+				t.Errorf("Categories = %v, want [music]", params.Categories)
+			}
+			if params.TimeRange != "" {
+				t.Errorf("TimeRange = %q, want empty", params.TimeRange)
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
+		Query: "test",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func testNewSearchMusicHandlerAllParams(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if params.Query != "test" {
+				t.Errorf("Query = %q, want %q", params.Query, "test")
+			}
+			if params.Language != "fr" {
+				t.Errorf("Language = %q, want %q", params.Language, "fr")
+			}
+			if params.Page != 5 {
+				t.Errorf("Page = %d, want 5", params.Page)
+			}
+			if params.SafeSearch != 2 {
+				t.Errorf("SafeSearch = %d, want 2", params.SafeSearch)
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
+		Query:      "test",
+		Language:   "fr",
+		Page:       5,
+		SafeSearch: 2,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func testNewSearchMusicHandlerRepoError(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return nil, errors.New("upstream error")
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
+		Query: "test",
 	})
 
-	t.Run("music search passes preset categories", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if len(params.Categories) != 1 || params.Categories[0] != "music" {
-					t.Errorf("Categories = %v, want [music]", params.Categories)
-				}
-				if params.TimeRange != "" {
-					t.Errorf("TimeRange = %q, want empty", params.TimeRange)
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-	})
-
-	t.Run("music search with all parameters", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if params.Query != "test" {
-					t.Errorf("Query = %q, want %q", params.Query, "test")
-				}
-				if params.Language != "fr" {
-					t.Errorf("Language = %q, want %q", params.Language, "fr")
-				}
-				if params.Page != 5 {
-					t.Errorf("Page = %d, want 5", params.Page)
-				}
-				if params.SafeSearch != 2 {
-					t.Errorf("SafeSearch = %d, want 2", params.SafeSearch)
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
-			Query:      "test",
-			Language:   "fr",
-			Page:       5,
-			SafeSearch: 2,
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-	})
-
-	t.Run("music search error propagates", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
-				return nil, errors.New("upstream error")
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
-			Query: "test",
-		})
-
-		if err == nil {
-			t.Fatal("handler expected error, got nil")
-		}
-	})
+	if err == nil {
+		t.Fatal("handler expected error, got nil")
+	}
 }
 
 func TestNewSearchMusicHandler_MaxResults(t *testing.T) {
 	t.Parallel()
 
-	t.Run("music max_results truncates results", func(t *testing.T) {
-		results := make([]domain.SearchResult, 7)
-		for i := range 7 {
-			results[i] = domain.SearchResult{
-				Title:   fmt.Sprintf("Music %d", i+1),
-				URL:     fmt.Sprintf("https://music.example.com/%d", i+1),
-				Content: fmt.Sprintf("Content %d", i+1),
-				Engine:  "google",
-			}
-		}
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: results,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
+	t.Run("music max_results truncates results", testNewSearchMusicHandlerMaxResultsTruncates)
+	t.Run("music max_results nil returns all results", testNewSearchMusicHandlerMaxResultsNil)
+}
 
-		maxResults := uint64(4)
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
-			Query:      "test",
-			MaxResults: &maxResults,
-		})
+func testNewSearchMusicHandlerMaxResultsTruncates(t *testing.T) {
+	results := make([]domain.SearchResult, 7)
+	for i := range 7 {
+		results[i] = domain.SearchResult{
+			Title:   fmt.Sprintf("Music %d", i+1),
+			URL:     fmt.Sprintf("https://music.example.com/%d", i+1),
+			Content: fmt.Sprintf("Content %d", i+1),
+			Engine:  "google",
+		}
+	}
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: results,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 4 {
-			t.Errorf("len(Results) = %d, want 4", len(output.Results))
-		}
+	maxResults := uint64(4)
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
+		Query:      "test",
+		MaxResults: &maxResults,
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 4 {
+		t.Errorf("len(Results) = %d, want 4", len(output.Results))
+	}
+}
 
-	t.Run("music max_results nil returns all results", func(t *testing.T) {
-		results := make([]domain.SearchResult, 3)
-		for i := range 3 {
-			results[i] = domain.SearchResult{
-				Title:   fmt.Sprintf("Music %d", i+1),
-				URL:     fmt.Sprintf("https://music.example.com/%d", i+1),
-				Content: fmt.Sprintf("Content %d", i+1),
-				Engine:  "google",
-			}
+func testNewSearchMusicHandlerMaxResultsNil(t *testing.T) {
+	results := make([]domain.SearchResult, 3)
+	for i := range 3 {
+		results[i] = domain.SearchResult{
+			Title:   fmt.Sprintf("Music %d", i+1),
+			URL:     fmt.Sprintf("https://music.example.com/%d", i+1),
+			Content: fmt.Sprintf("Content %d", i+1),
+			Engine:  "google",
 		}
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: results,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
+	}
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: results,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchMusicHandler(newTestLogger(), svc)
 
-		_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if len(output.Results) != 3 {
-			t.Errorf("len(Results) = %d, want 3", len(output.Results))
-		}
+	_, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchMusicInput{
+		Query: "test",
 	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(output.Results) != 3 {
+		t.Errorf("len(Results) = %d, want 3", len(output.Results))
+	}
 }
 
 func TestSearchHelper_MaxResults_EdgeCases(t *testing.T) {
@@ -1117,6 +1146,7 @@ func TestSearchHelper_MaxResults_EdgeCases(t *testing.T) {
 						Engine:  "google",
 					}
 				}
+
 				return &domain.SearchResponse{
 					Query:           params.Query,
 					Results:         results,
@@ -1132,7 +1162,6 @@ func TestSearchHelper_MaxResults_EdgeCases(t *testing.T) {
 			Query:      "test",
 			MaxResults: &maxResults,
 		})
-
 		if err != nil {
 			t.Fatalf("handler returned error: %v", err)
 		}
@@ -1349,130 +1378,134 @@ func TestNewSearchVideosHandler_Validation(t *testing.T) {
 	})
 }
 
-func TestNewSearchImagesHandler(t *testing.T) { //nolint:gocognit
+func TestNewSearchImagesHandler(t *testing.T) {
 	t.Parallel()
 
-	t.Run("basic image search returns results", func(t *testing.T) {
-		imgSrc := "https://example.com/image.jpg"
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				return &domain.SearchResponse{
-					Query: params.Query,
-					Results: []domain.SearchResult{
-						{
-							Title:   "Image Title",
-							URL:     "https://example.com",
-							Content: "Image content",
-							Engine:  "google",
-							ImgSrc:  &imgSrc,
-						},
+	t.Run("basic image search returns results", testNewSearchImagesHandlerBasic)
+	t.Run("image search passes preset categories", testNewSearchImagesHandlerPresets)
+	t.Run("image search with all parameters", testNewSearchImagesHandlerAllParams)
+	t.Run("image search error propagates", testNewSearchImagesHandlerRepoError)
+}
+
+func testNewSearchImagesHandlerBasic(t *testing.T) {
+	imgSrc := "https://example.com/image.jpg"
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			return &domain.SearchResponse{
+				Query: params.Query,
+				Results: []domain.SearchResult{
+					{
+						Title:   "Image Title",
+						URL:     "https://example.com",
+						Content: "Image content",
+						Engine:  "google",
+						ImgSrc:  &imgSrc,
 					},
-					NumberOfResults: 1,
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
+				},
+				NumberOfResults: 1,
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
 
-		result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
-			Query: "test image",
-		})
+	result, output, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
+		Query: "test image",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil CallToolResult, got %v", result)
+	}
+	if output.Query != "test image" {
+		t.Errorf("Query = %q, want %q", output.Query, "test image")
+	}
+	if len(output.Results) != 1 {
+		t.Fatalf("len(Results) = %d, want 1", len(output.Results))
+	}
+	if output.Results[0].ImgSrc == nil || *output.Results[0].ImgSrc != "https://example.com/image.jpg" {
+		t.Errorf("Results[0].ImgSrc = %v, want %v", output.Results[0].ImgSrc, &imgSrc)
+	}
+}
 
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-		if result != nil {
-			t.Errorf("expected nil CallToolResult, got %v", result)
-		}
-		if output.Query != "test image" {
-			t.Errorf("Query = %q, want %q", output.Query, "test image")
-		}
-		if len(output.Results) != 1 {
-			t.Fatalf("len(Results) = %d, want 1", len(output.Results))
-		}
-		if output.Results[0].ImgSrc == nil || *output.Results[0].ImgSrc != "https://example.com/image.jpg" {
-			t.Errorf("Results[0].ImgSrc = %v, want %v", output.Results[0].ImgSrc, &imgSrc)
-		}
+func testNewSearchImagesHandlerPresets(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if len(params.Categories) != 1 || params.Categories[0] != "images" {
+				t.Errorf("Categories = %v, want [images]", params.Categories)
+			}
+			if params.TimeRange != "" {
+				t.Errorf("TimeRange = %q, want empty", params.TimeRange)
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
+		Query: "test",
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func testNewSearchImagesHandlerAllParams(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
+			if params.Query != "test" {
+				t.Errorf("Query = %q, want %q", params.Query, "test")
+			}
+			if params.Language != "fr" {
+				t.Errorf("Language = %q, want %q", params.Language, "fr")
+			}
+			if params.Page != 5 {
+				t.Errorf("Page = %d, want 5", params.Page)
+			}
+			if params.SafeSearch != 2 {
+				t.Errorf("SafeSearch = %d, want 2", params.SafeSearch)
+			}
+
+			return &domain.SearchResponse{
+				Query:   params.Query,
+				Results: []domain.SearchResult{},
+			}, nil
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
+		Query:      "test",
+		Language:   "fr",
+		Page:       5,
+		SafeSearch: 2,
+	})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+}
+
+func testNewSearchImagesHandlerRepoError(t *testing.T) {
+	repo := &mockSearchRepo{
+		searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
+			return nil, errors.New("upstream error")
+		},
+	}
+	svc := newMockService(repo)
+	handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
+
+	_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
+		Query: "test",
 	})
 
-	t.Run("image search passes preset categories", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if len(params.Categories) != 1 || params.Categories[0] != "images" {
-					t.Errorf("Categories = %v, want [images]", params.Categories)
-				}
-				if params.TimeRange != "" {
-					t.Errorf("TimeRange = %q, want empty", params.TimeRange)
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
-			Query: "test",
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-	})
-
-	t.Run("image search with all parameters", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
-				if params.Query != "test" {
-					t.Errorf("Query = %q, want %q", params.Query, "test")
-				}
-				if params.Language != "fr" {
-					t.Errorf("Language = %q, want %q", params.Language, "fr")
-				}
-				if params.Page != 5 {
-					t.Errorf("Page = %d, want 5", params.Page)
-				}
-				if params.SafeSearch != 2 {
-					t.Errorf("SafeSearch = %d, want 2", params.SafeSearch)
-				}
-				return &domain.SearchResponse{
-					Query:   params.Query,
-					Results: []domain.SearchResult{},
-				}, nil
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
-			Query:      "test",
-			Language:   "fr",
-			Page:       5,
-			SafeSearch: 2,
-		})
-
-		if err != nil {
-			t.Fatalf("handler returned error: %v", err)
-		}
-	})
-
-	t.Run("image search error propagates", func(t *testing.T) {
-		repo := &mockSearchRepo{
-			searchFunc: func(_ context.Context, _ domain.SearchParams) (*domain.SearchResponse, error) {
-				return nil, errors.New("upstream error")
-			},
-		}
-		svc := newMockService(repo)
-		handler := handlers.NewSearchImagesHandler(newTestLogger(), svc)
-
-		_, _, err := handler(context.Background(), &mcp.CallToolRequest{}, handlers.SearchImagesInput{
-			Query: "test",
-		})
-
-		if err == nil {
-			t.Fatal("handler expected error, got nil")
-		}
-	})
+	if err == nil {
+		t.Fatal("handler expected error, got nil")
+	}
 }

@@ -37,6 +37,7 @@ const (
 
 // --- search ---
 
+// SearchInput is the input schema for the `search` tool.
 type SearchInput struct {
 	Query      string   `json:"query" jsonschema:"the search query,required"`
 	Categories []string `json:"categories,omitempty" jsonschema:"comma separated list of active search categories"`
@@ -47,6 +48,7 @@ type SearchInput struct {
 	MaxResults *uint64  `json:"max_results,omitempty" jsonschema:"maximum number of results to return, nil=unlimited"`
 }
 
+// SearchResultItem is a single search result returned by SearXNG.
 type SearchResultItem struct {
 	Title         string  `json:"title"`
 	URL           string  `json:"url"`
@@ -59,16 +61,19 @@ type SearchResultItem struct {
 	Source        *string `json:"source,omitempty"`
 }
 
+// InfoboxAttributeItem is a key/value attribute within an infobox.
 type InfoboxAttributeItem struct {
 	Key   string `json:"key,omitempty"`
 	Value string `json:"value,omitempty"`
 }
 
+// InfoboxURLItem is a related link within an infobox.
 type InfoboxURLItem struct {
 	Title string `json:"title,omitempty"`
 	URL   string `json:"url,omitempty"`
 }
 
+// InfoboxItem is a structured information box returned for a query.
 type InfoboxItem struct {
 	ID         string                 `json:"id,omitempty"`
 	URL        string                 `json:"url,omitempty"`
@@ -79,6 +84,7 @@ type InfoboxItem struct {
 	Engine     string                 `json:"engine,omitempty"`
 }
 
+// SearchOutput is the structured result of any search tool call.
 type SearchOutput struct {
 	Query           string             `json:"query"`
 	Results         []SearchResultItem `json:"results"`
@@ -90,6 +96,7 @@ type SearchOutput struct {
 
 // --- search_news ---
 
+// SearchNewsInput is the input schema for the `search_news` tool.
 type SearchNewsInput struct {
 	Query      string  `json:"query" jsonschema:"the search query,required"`
 	Language   string  `json:"language,omitempty" jsonschema:"code of the language (e.g. en-US, de-DE)"`
@@ -100,6 +107,7 @@ type SearchNewsInput struct {
 
 // --- search_images ---
 
+// SearchImagesInput is the input schema for the `search_images` tool.
 type SearchImagesInput struct {
 	Query      string  `json:"query" jsonschema:"the search query,required"`
 	Page       int     `json:"page,omitempty" jsonschema:"search page number,default=1"`
@@ -110,6 +118,7 @@ type SearchImagesInput struct {
 
 // --- search_videos ---
 
+// SearchVideosInput is the input schema for the `search_videos` tool.
 type SearchVideosInput struct {
 	Query      string  `json:"query" jsonschema:"the search query,required"`
 	Page       int     `json:"page,omitempty" jsonschema:"search page number,default=1"`
@@ -120,6 +129,7 @@ type SearchVideosInput struct {
 
 // --- search_music ---
 
+// SearchMusicInput is the input schema for the `search_music` tool.
 type SearchMusicInput struct {
 	Query      string  `json:"query" jsonschema:"the search query,required"`
 	Page       int     `json:"page,omitempty" jsonschema:"search page number,default=1"`
@@ -175,6 +185,7 @@ func sanitizeOutput(s string) string {
 		if r >= 0x2066 && r <= 0x2069 { // LRI, RLI, FSI, PDI
 			return -1
 		}
+
 		return r
 	}, s)
 }
@@ -187,16 +198,16 @@ func sanitizeURL(rawURL string) string {
 		return ""
 	}
 
-	u, err := url.Parse(rawURL)
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return ""
 	}
 
-	if u.Scheme != "http" && u.Scheme != "https" {
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return ""
 	}
 
-	return u.String()
+	return parsed.String()
 }
 
 // sanitizeOutputPtr applies sanitizeOutput to a *string, returning nil on empty.
@@ -205,6 +216,7 @@ func sanitizeOutputPtr(s *string) *string {
 		return nil
 	}
 	sanitized := sanitizeOutput(*s)
+
 	return &sanitized
 }
 
@@ -229,7 +241,9 @@ func sanitizeImgSrc(s *string) *string {
 
 // searchHelper performs a search and converts the result to SearchOutput.
 // If maxResults is non-nil, the results slice is truncated to the specified length.
-func searchHelper(ctx context.Context, svc *application.SearchService, params domain.SearchParams, maxResults *uint64) (SearchOutput, error) {
+func searchHelper(
+	ctx context.Context, svc *application.SearchService, params domain.SearchParams, maxResults *uint64,
+) (SearchOutput, error) {
 	page := params.Page
 	if page <= 0 {
 		page = 1
@@ -273,34 +287,7 @@ func searchHelper(ctx context.Context, svc *application.SearchService, params do
 		suggestions = append(suggestions, sanitizeOutput(string(s)))
 	}
 
-	infoboxes := make([]InfoboxItem, 0, len(result.Infoboxes))
-	for _, ib := range result.Infoboxes {
-		attrs := make([]InfoboxAttributeItem, 0, len(ib.Attributes))
-		for _, a := range ib.Attributes {
-			attrs = append(attrs, InfoboxAttributeItem{
-				Key:   sanitizeOutput(a.Key),
-				Value: sanitizeOutput(a.Value),
-			})
-		}
-
-		urls := make([]InfoboxURLItem, 0, len(ib.URLs))
-		for _, u := range ib.URLs {
-			urls = append(urls, InfoboxURLItem{
-				Title: sanitizeOutput(u.Title),
-				URL:   sanitizeURL(u.URL),
-			})
-		}
-
-		infoboxes = append(infoboxes, InfoboxItem{
-			ID:         sanitizeOutput(ib.ID),
-			URL:        sanitizeURL(ib.URL),
-			Content:    sanitizeOutput(ib.Content),
-			Attributes: attrs,
-			URLs:       urls,
-			ImgSrc:     sanitizeImgSrc(ib.ImgSrc),
-			Engine:     sanitizeOutput(ib.Engine),
-		})
-	}
+	infoboxes := buildInfoboxes(result.Infoboxes)
 
 	return SearchOutput{
 		Query:           sanitizeOutput(result.Query),
@@ -310,6 +297,40 @@ func searchHelper(ctx context.Context, svc *application.SearchService, params do
 		Infoboxes:       infoboxes,
 		NumberOfResults: result.NumberOfResults,
 	}, nil
+}
+
+// buildInfoboxes converts domain infoboxes into sanitized output items.
+func buildInfoboxes(source []domain.Infobox) []InfoboxItem {
+	infoboxes := make([]InfoboxItem, 0, len(source))
+	for _, infobox := range source {
+		attrs := make([]InfoboxAttributeItem, 0, len(infobox.Attributes))
+		for _, a := range infobox.Attributes {
+			attrs = append(attrs, InfoboxAttributeItem{
+				Key:   sanitizeOutput(a.Key),
+				Value: sanitizeOutput(a.Value),
+			})
+		}
+
+		urls := make([]InfoboxURLItem, 0, len(infobox.URLs))
+		for _, u := range infobox.URLs {
+			urls = append(urls, InfoboxURLItem{
+				Title: sanitizeOutput(u.Title),
+				URL:   sanitizeURL(u.URL),
+			})
+		}
+
+		infoboxes = append(infoboxes, InfoboxItem{
+			ID:         sanitizeOutput(infobox.ID),
+			URL:        sanitizeURL(infobox.URL),
+			Content:    sanitizeOutput(infobox.Content),
+			Attributes: attrs,
+			URLs:       urls,
+			ImgSrc:     sanitizeImgSrc(infobox.ImgSrc),
+			Engine:     sanitizeOutput(infobox.Engine),
+		})
+	}
+
+	return infoboxes
 }
 
 // ============================================================
@@ -325,6 +346,7 @@ func validateQuery(q string) error {
 	if len(q) > MaxQueryLength {
 		return ErrQueryTooLong
 	}
+
 	return nil
 }
 
@@ -333,6 +355,7 @@ func validatePage(page int) error {
 	if page > MaxPageNumber {
 		return ErrPageTooLarge
 	}
+
 	return nil
 }
 
@@ -341,10 +364,12 @@ func NewSearchHandler(logger *logrus.Logger, svc *application.SearchService) mcp
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
 			logger.Errorf("search validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
 			logger.Errorf("search validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search: %w", err)
 		}
 
@@ -358,21 +383,27 @@ func NewSearchHandler(logger *logrus.Logger, svc *application.SearchService) mcp
 		}, input.MaxResults)
 		if err != nil {
 			logger.Errorf("search: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search: %w", ErrSearchFailed)
 		}
+
 		return nil, output, nil
 	}
 }
 
 // NewSearchNewsHandler creates a handler for search_news with presets: categories=["news"], time_range="day".
-func NewSearchNewsHandler(logger *logrus.Logger, svc *application.SearchService) mcp.ToolHandlerFor[SearchNewsInput, SearchOutput] {
+func NewSearchNewsHandler(
+	logger *logrus.Logger, svc *application.SearchService,
+) mcp.ToolHandlerFor[SearchNewsInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchNewsInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
 			logger.Errorf("search_news validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_news: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
 			logger.Errorf("search_news validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_news: %w", err)
 		}
 
@@ -386,21 +417,27 @@ func NewSearchNewsHandler(logger *logrus.Logger, svc *application.SearchService)
 		}, input.MaxResults)
 		if err != nil {
 			logger.Errorf("search_news: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_news: %w", ErrSearchFailed)
 		}
+
 		return nil, output, nil
 	}
 }
 
 // NewSearchImagesHandler creates a handler for search_images with presets: categories=["images"].
-func NewSearchImagesHandler(logger *logrus.Logger, svc *application.SearchService) mcp.ToolHandlerFor[SearchImagesInput, SearchOutput] {
+func NewSearchImagesHandler(
+	logger *logrus.Logger, svc *application.SearchService,
+) mcp.ToolHandlerFor[SearchImagesInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchImagesInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
 			logger.Errorf("search_images validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_images: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
 			logger.Errorf("search_images validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_images: %w", err)
 		}
 
@@ -413,21 +450,27 @@ func NewSearchImagesHandler(logger *logrus.Logger, svc *application.SearchServic
 		}, input.MaxResults)
 		if err != nil {
 			logger.Errorf("search_images: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_images: %w", ErrSearchFailed)
 		}
+
 		return nil, output, nil
 	}
 }
 
 // NewSearchVideosHandler creates a handler for search_videos with presets: categories=["videos"].
-func NewSearchVideosHandler(logger *logrus.Logger, svc *application.SearchService) mcp.ToolHandlerFor[SearchVideosInput, SearchOutput] {
+func NewSearchVideosHandler(
+	logger *logrus.Logger, svc *application.SearchService,
+) mcp.ToolHandlerFor[SearchVideosInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchVideosInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
 			logger.Errorf("search_videos validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_videos: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
 			logger.Errorf("search_videos validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_videos: %w", err)
 		}
 
@@ -440,21 +483,27 @@ func NewSearchVideosHandler(logger *logrus.Logger, svc *application.SearchServic
 		}, input.MaxResults)
 		if err != nil {
 			logger.Errorf("search_videos: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_videos: %w", ErrSearchFailed)
 		}
+
 		return nil, output, nil
 	}
 }
 
 // NewSearchMusicHandler creates a handler for search_music with presets: categories=["music"].
-func NewSearchMusicHandler(logger *logrus.Logger, svc *application.SearchService) mcp.ToolHandlerFor[SearchMusicInput, SearchOutput] {
+func NewSearchMusicHandler(
+	logger *logrus.Logger, svc *application.SearchService,
+) mcp.ToolHandlerFor[SearchMusicInput, SearchOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, input SearchMusicInput) (*mcp.CallToolResult, SearchOutput, error) {
 		if err := validateQuery(input.Query); err != nil {
 			logger.Errorf("search_music validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_music: %w", err)
 		}
 		if err := validatePage(input.Page); err != nil {
 			logger.Errorf("search_music validation: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_music: %w", err)
 		}
 
@@ -467,8 +516,10 @@ func NewSearchMusicHandler(logger *logrus.Logger, svc *application.SearchService
 		}, input.MaxResults)
 		if err != nil {
 			logger.Errorf("search_music: %s", SanitizeLog(err.Error()))
+
 			return nil, SearchOutput{}, fmt.Errorf("search_music: %w", ErrSearchFailed)
 		}
+
 		return nil, output, nil
 	}
 }

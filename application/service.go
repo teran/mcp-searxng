@@ -1,3 +1,4 @@
+// Package application implements the search use cases (application layer).
 package application
 
 import (
@@ -23,5 +24,6 @@ func (s *SearchService) Search(ctx context.Context, params domain.SearchParams) 
 	if err != nil {
 		return nil, fmt.Errorf("search: %w", err)
 	}
+
 	return result, nil
 }

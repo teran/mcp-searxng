@@ -171,6 +171,7 @@ func rawAnswerToString(a json.RawMessage) domain.AnswerResult {
 	if err != nil {
 		return domain.AnswerResult(string(a))
 	}
+
 	return domain.AnswerResult(string(b))
 }
 

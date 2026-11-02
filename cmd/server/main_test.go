@@ -25,6 +25,7 @@ import (
 func testLogger() *logrus.Logger {
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
+
 	return logger
 }
 
@@ -32,24 +33,24 @@ func TestHealthEndpoint(t *testing.T) {
 	t.Parallel()
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/healthz", nil)
-	rr := httptest.NewRecorder()
+	recorder := httptest.NewRecorder()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
-	mux.ServeHTTP(rr, req)
+	mux.ServeHTTP(recorder, req)
 
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rr.Code)
+	if recorder.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", recorder.Code)
 	}
-	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
+	if ct := recorder.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("expected Content-Type application/json, got %q", ct)
 	}
-	if rr.Body.String() != `{"status":"ok"}` {
-		t.Errorf("expected body {\"status\":\"ok\"}, got %q", rr.Body.String())
+	if recorder.Body.String() != `{"status":"ok"}` {
+		t.Errorf("expected body {\"status\":\"ok\"}, got %q", recorder.Body.String())
 	}
 }
 
@@ -64,6 +65,7 @@ func mustListen(t *testing.T) net.Listener {
 	if err != nil {
 		t.Fatalf("failed to bind listener: %v", err)
 	}
+
 	return l
 }
 
@@ -78,6 +80,7 @@ func freePort(t *testing.T) string {
 		t.Fatalf("failed to find free port: %v", err)
 	}
 	defer func() { _ = l.Close() }()
+
 	return l.Addr().String()
 }
 
@@ -108,10 +111,12 @@ func serverReady(url string, timeout time.Duration) bool {
 		resp, err := testClient.Get(url) //nolint:noctx
 		if err == nil {
 			_ = resp.Body.Close()
+
 			return true
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+
 	return false
 }
 
@@ -190,22 +195,10 @@ func TestRun_HealthEndpoint(t *testing.T) {
 	}
 }
 
-func TestRun_MCPHandlerPing(t *testing.T) {
-	mainLn := mustListen(t)
-	metricsLn := mustListen(t)
-
-	cfg := newTestConfig(mainLn, metricsLn)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- runHTTP(ctx, cfg, testLogger(), mainLn, metricsLn)
-	}()
-
-	addr := mainLn.Addr().String()
-	waitForServer(t, "http://"+addr+"/", 3*time.Second)
+// doJSONRPCPing sends a JSON-RPC ping to the MCP Streamable HTTP handler and
+// returns the parsed SSE `data:` JSON payload.
+func doJSONRPCPing(t *testing.T, addr string) map[string]any {
+	t.Helper()
 
 	// JSON-RPC ping request: {"jsonrpc":"2.0","id":1,"method":"ping"}
 	pingReq := map[string]any{
@@ -235,14 +228,13 @@ func TestRun_MCPHandlerPing(t *testing.T) {
 	// Streamable HTTP handler may respond with either 200 (JSON-RPC response)
 	// or 202 (pending stream session). Both are valid responses for a ping.
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
-		t.Errorf("expected status 200 or 202 for ping, got %d", resp.StatusCode)
+		t.Fatalf("expected status 200 or 202 for ping, got %d", resp.StatusCode)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("failed to read response body: %v", err)
 	}
-
 	if len(respBody) == 0 {
 		t.Fatal("empty response body")
 	}
@@ -253,14 +245,14 @@ func TestRun_MCPHandlerPing(t *testing.T) {
 	//
 	// Extract the data line and parse it as JSON.
 	var dataLine string
-	for _, line := range bytes.Split(respBody, []byte("\n")) {
+	for line := range bytes.SplitSeq(respBody, []byte("\n")) {
 		trimmed := bytes.TrimSpace(line)
-		if bytes.HasPrefix(trimmed, []byte("data: ")) {
-			dataLine = string(bytes.TrimPrefix(trimmed, []byte("data: ")))
+		if after, ok := bytes.CutPrefix(trimmed, []byte("data: ")); ok {
+			dataLine = string(after)
+
 			break
 		}
 	}
-
 	if dataLine == "" {
 		t.Fatalf("no SSE data line found in response:\n%s", string(respBody))
 	}
@@ -269,6 +261,28 @@ func TestRun_MCPHandlerPing(t *testing.T) {
 	if err := json.Unmarshal([]byte(dataLine), &result); err != nil {
 		t.Fatalf("response data is not valid JSON: %v\ndata: %s\nraw: %s", err, dataLine, string(respBody))
 	}
+
+	return result
+}
+
+func TestRun_MCPHandlerPing(t *testing.T) {
+	mainLn := mustListen(t)
+	metricsLn := mustListen(t)
+
+	cfg := newTestConfig(mainLn, metricsLn)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- runHTTP(ctx, cfg, testLogger(), mainLn, metricsLn)
+	}()
+
+	addr := mainLn.Addr().String()
+	waitForServer(t, "http://"+addr+"/", 3*time.Second)
+
+	result := doJSONRPCPing(t, addr)
 
 	if result["jsonrpc"] != "2.0" {
 		t.Errorf("expected jsonrpc '2.0', got %v", result["jsonrpc"])
@@ -431,6 +445,7 @@ func TestRun_Success(t *testing.T) {
 				_ = err
 			default:
 			}
+
 			continue
 		}
 
@@ -444,6 +459,7 @@ func TestRun_Success(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatal("timed out waiting for Run to return after SIGTERM")
 		}
+
 		return // success
 	}
 	t.Fatal("Run success path not reproducible after 5 attempts")
@@ -467,8 +483,7 @@ func TestRunStdio_RoundTrip(t *testing.T) {
 
 	cfg := newStdioTestConfig(metricsLn)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -579,21 +594,7 @@ func TestRunStdio_OutboundUserAgent(t *testing.T) {
 	// stdio server must connect first (client initializes the session), so use
 	// a bounded timeout and retry.
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v1.0.0"}, nil)
-
-	var session *mcp.ClientSession
-	var err error
-	for range 20 {
-		connectCtx, cancelConnect := context.WithTimeout(t.Context(), time.Second)
-		session, err = client.Connect(connectCtx, clientTransport, nil)
-		cancelConnect()
-		if err == nil {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatalf("client connect: %v", err)
-	}
+	session := connectStdioClient(t, client, clientTransport)
 
 	// Drive a successful search against the recording backend.
 	res, err := session.CallTool(t.Context(), &mcp.CallToolParams{
@@ -625,6 +626,29 @@ func TestRunStdio_OutboundUserAgent(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for runStdio to return after session close")
 	}
+}
+
+// connectStdioClient retries connecting the MCP client over the in-memory
+// transport until the stdio server has initialized the session.
+func connectStdioClient(t *testing.T, client *mcp.Client, transport mcp.Transport) *mcp.ClientSession {
+	t.Helper()
+
+	var session *mcp.ClientSession
+	var err error
+	for range 20 {
+		connectCtx, cancelConnect := context.WithTimeout(t.Context(), time.Second)
+		session, err = client.Connect(connectCtx, transport, nil)
+		cancelConnect()
+		if err == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("client connect: %v", err)
+	}
+
+	return session
 }
 
 func TestRun_StdioBindError(t *testing.T) {

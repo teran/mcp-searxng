@@ -48,6 +48,7 @@ func NewMetrics(reg *prometheus.Registry) *Metrics {
 		),
 	}
 	reg.MustRegister(m.toolRequestsTotal, m.toolDuration, m.activeRequests)
+
 	return m
 }
 
@@ -97,5 +98,6 @@ func MetricsMiddleware(metrics *Metrics) func(http.Handler) http.Handler {
 // metrics on the same registry, then returns an http.Handler for /metrics.
 func RegisterMetricsOnRegistry(reg *prometheus.Registry) http.Handler {
 	reg.MustRegister(collectors.NewGoCollector())
+
 	return promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 }

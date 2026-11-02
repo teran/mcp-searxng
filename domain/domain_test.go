@@ -1,3 +1,5 @@
+// Package domain contains the domain models and repository interface
+// (innermost layer).
 package domain
 
 import (
@@ -208,7 +210,7 @@ func TestSearchParams_ZeroValues(t *testing.T) {
 func TestInfobox_Populate(t *testing.T) {
 	t.Parallel()
 
-	ib := Infobox{
+	infobox := Infobox{
 		ID:      "infobox_1",
 		URL:     "https://example.com/info",
 		Content: "Infobox content",
@@ -224,25 +226,25 @@ func TestInfobox_Populate(t *testing.T) {
 		},
 	}
 
-	if ib.ID != "infobox_1" {
-		t.Errorf("ID = %q, want %q", ib.ID, "infobox_1")
+	if infobox.ID != "infobox_1" {
+		t.Errorf("ID = %q, want %q", infobox.ID, "infobox_1")
 	}
-	if ib.URL != "https://example.com/info" {
-		t.Errorf("URL = %q, want %q", ib.URL, "https://example.com/info")
+	if infobox.URL != "https://example.com/info" {
+		t.Errorf("URL = %q, want %q", infobox.URL, "https://example.com/info")
 	}
-	if ib.Content != "Infobox content" {
-		t.Errorf("Content = %q, want %q", ib.Content, "Infobox content")
+	if infobox.Content != "Infobox content" {
+		t.Errorf("Content = %q, want %q", infobox.Content, "Infobox content")
 	}
-	if len(ib.Infoboxes) != 1 {
-		t.Errorf("len(Infoboxes) = %d, want 1", len(ib.Infoboxes))
+	if len(infobox.Infoboxes) != 1 {
+		t.Errorf("len(Infoboxes) = %d, want 1", len(infobox.Infoboxes))
 	}
-	if ib.Engine != "duckduckgo" {
-		t.Errorf("Engine = %q, want %q", ib.Engine, "duckduckgo")
+	if infobox.Engine != "duckduckgo" {
+		t.Errorf("Engine = %q, want %q", infobox.Engine, "duckduckgo")
 	}
-	if len(ib.URLs) != 1 || ib.URLs[0].Title != "Link 1" {
-		t.Errorf("URLs = %v, want [Link 1]", ib.URLs)
+	if len(infobox.URLs) != 1 || infobox.URLs[0].Title != "Link 1" {
+		t.Errorf("URLs = %v, want [Link 1]", infobox.URLs)
 	}
-	if len(ib.Attributes) != 1 || ib.Attributes[0].Key != "key1" {
-		t.Errorf("Attributes = %v, want [key1=value1]", ib.Attributes)
+	if len(infobox.Attributes) != 1 || infobox.Attributes[0].Key != "key1" {
+		t.Errorf("Attributes = %v, want [key1=value1]", infobox.Attributes)
 	}
 }

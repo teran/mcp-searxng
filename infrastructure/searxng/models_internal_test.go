@@ -7,17 +7,13 @@ import (
 	"github.com/teran/mcp-searxng/domain"
 )
 
-func strPtr(s string) *string {
-	return &s
-}
-
 func TestRawSearchResult_ToDomain_PubDateFallback(t *testing.T) {
 	t.Parallel()
 
 	t.Run("PubDate used when PublishedDate is nil", func(t *testing.T) {
 		r := rawSearchResult{
 			PublishedDate: nil,
-			PubDate:       strPtr("2024-01-01"),
+			PubDate:       new("2024-01-01"),
 		}
 
 		got := r.toDomain()
@@ -28,8 +24,8 @@ func TestRawSearchResult_ToDomain_PubDateFallback(t *testing.T) {
 
 	t.Run("PublishedDate takes precedence over PubDate", func(t *testing.T) {
 		r := rawSearchResult{
-			PublishedDate: strPtr("2024-02-02"),
-			PubDate:       strPtr("2024-01-01"),
+			PublishedDate: new("2024-02-02"),
+			PubDate:       new("2024-01-01"),
 		}
 
 		got := r.toDomain()

@@ -52,6 +52,10 @@ func ParseFormat(s string) (logrus.Formatter, error) {
 	}
 }
 
+// logFilePerm is the permission mode for a created log file (0600): the file
+// may contain sensitive data, so only the owner can read or write it.
+const logFilePerm = 0o600
+
 // Options configures the logger built by New. It is transport-agnostic so the
 // logging package does not need to import config (avoiding an import cycle):
 //
@@ -93,6 +97,7 @@ func New(opts Options) (*logrus.Logger, error) {
 		logger := logrus.New()
 		logger.SetOutput(io.Discard)
 		logger.SetLevel(logrus.PanicLevel)
+
 		return logger, nil
 	}
 
@@ -110,7 +115,7 @@ func New(opts Options) (*logrus.Logger, error) {
 	switch {
 	case opts.Filename != "":
 		// #nosec G304 -- filename comes from operator-controlled config (LOG_FILENAME), not user input.
-		f, err := os.OpenFile(opts.Filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		f, err := os.OpenFile(opts.Filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, logFilePerm)
 		if err != nil {
 			return nil, fmt.Errorf("open log file: %w", err)
 		}
@@ -126,6 +131,7 @@ func New(opts Options) (*logrus.Logger, error) {
 	logger.SetOutput(out)
 	logger.SetFormatter(formatter)
 	logger.SetLevel(level)
+
 	return logger, nil
 }
 

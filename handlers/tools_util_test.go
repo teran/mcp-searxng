@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -233,7 +234,7 @@ func TestValidateQuery(t *testing.T) {
 	})
 
 	t.Run("empty query returns error", func(t *testing.T) {
-		if err := validateQuery(""); err != ErrInvalidQuery {
+		if err := validateQuery(""); !errors.Is(err, ErrInvalidQuery) {
 			t.Errorf("validateQuery(\"\") = %v, want %v", err, ErrInvalidQuery)
 		}
 	})
@@ -243,7 +244,7 @@ func TestValidateQuery(t *testing.T) {
 		for i := range long {
 			long[i] = 'a'
 		}
-		if err := validateQuery(string(long)); err != ErrQueryTooLong {
+		if err := validateQuery(string(long)); !errors.Is(err, ErrQueryTooLong) {
 			t.Errorf("validateQuery(too long) = %v, want %v", err, ErrQueryTooLong)
 		}
 	})
@@ -265,7 +266,7 @@ func TestValidatePage(t *testing.T) {
 	})
 
 	t.Run("page too large returns error", func(t *testing.T) {
-		if err := validatePage(MaxPageNumber + 1); err != ErrPageTooLarge {
+		if err := validatePage(MaxPageNumber + 1); !errors.Is(err, ErrPageTooLarge) {
 			t.Errorf("validatePage(%d) = %v, want %v", MaxPageNumber+1, err, ErrPageTooLarge)
 		}
 	})

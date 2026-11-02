@@ -19,6 +19,7 @@ import (
 func testLogger() *logrus.Logger {
 	logger := logrus.New()
 	logger.SetOutput(io.Discard)
+
 	return logger
 }
 
@@ -58,7 +59,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	t.Parallel()
 
 	t.Run("panicking handler recovers and returns 500", func(t *testing.T) {
-		handler := RecoveryMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := RecoveryMiddleware(testLogger(), http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			panic("test panic")
 		}))
 
@@ -72,7 +73,7 @@ func TestRecoveryMiddleware(t *testing.T) {
 	})
 
 	t.Run("normal handler passes through", func(t *testing.T) {
-		handler := RecoveryMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := RecoveryMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
 
@@ -203,7 +204,7 @@ func TestLoggingMiddleware(t *testing.T) {
 	t.Parallel()
 
 	t.Run("logs request and passes through", func(t *testing.T) {
-		handler := LoggingMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := LoggingMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"jsonrpc":"2.0"}`))
 		}))
@@ -225,7 +226,7 @@ func TestLoggingMiddleware(t *testing.T) {
 		}
 		body, _ := json.Marshal(batch)
 
-		handler := LoggingMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := LoggingMiddleware(testLogger(), http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 			t.Error("next handler should not be called for oversized batch")
 		}))
 
@@ -291,9 +292,12 @@ func TestLoggingMiddleware_BodyLimitReadError(t *testing.T) {
 		// BodyLimitMiddleware wraps the body with MaxBytesReader; when the
 		// LoggingMiddleware tries to read a body larger than the limit,
 		// io.ReadAll returns an error and the middleware responds 413.
-		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t.Error("next handler should not be called when body read fails")
-		})))
+		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(
+			testLogger(),
+			http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+				t.Error("next handler should not be called when body read fails")
+			}),
+		))
 
 		bigBody := strings.Repeat("x", DefaultMaxRequestBodySize+1)
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", strings.NewReader(bigBody))
@@ -307,20 +311,23 @@ func TestLoggingMiddleware_BodyLimitReadError(t *testing.T) {
 
 	t.Run("body within limit passes through", func(t *testing.T) {
 		called := false
-		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(testLogger(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			called = true
-			w.WriteHeader(http.StatusOK)
-		})))
+		chain := BodyLimitMiddleware(DefaultMaxRequestBodySize)(LoggingMiddleware(
+			testLogger(),
+			http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				called = true
+				w.WriteHeader(http.StatusOK)
+			}),
+		))
 
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/mcp", strings.NewReader(`{"method":"ping"}`))
-		rr := httptest.NewRecorder()
-		chain.ServeHTTP(rr, req)
+		recorder := httptest.NewRecorder()
+		chain.ServeHTTP(recorder, req)
 
 		if !called {
 			t.Error("next handler should be called when body is within limit")
 		}
-		if rr.Code != http.StatusOK {
-			t.Errorf("expected 200, got %d", rr.Code)
+		if recorder.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", recorder.Code)
 		}
 	})
 }
@@ -333,7 +340,7 @@ func TestLoggingMiddleware_StructuredFields(t *testing.T) {
 	logger.SetOutput(&buf)
 	logger.SetFormatter(&logrus.JSONFormatter{})
 
-	handler := LoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := LoggingMiddleware(logger, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0"}`))
 	}))

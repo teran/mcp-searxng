@@ -1,3 +1,7 @@
+// Package main is the composition root of the mcp-searxng server: it selects
+// the launch mode (stdio or Streamable HTTP), wires the layers and starts the
+// listeners. Startup performs local wiring only — no outbound request is made
+// (A02/N35).
 package main
 
 import (
@@ -23,6 +27,23 @@ import (
 	"github.com/teran/mcp-searxng/handlers"
 	infra "github.com/teran/mcp-searxng/infrastructure/searxng"
 	"github.com/teran/mcp-searxng/logging"
+)
+
+// Named durations and sizes used at startup, kept as constants so the `mnd`
+// linter has no bare magic numbers (C03GO) and the values are documented once.
+const (
+	restyMaxIdleConns   = 10
+	restyIdleTimeout    = 90 * time.Second
+	restyTimeout        = 30 * time.Second
+	metricsReadHeaderTO = 10 * time.Second
+	metricsWriteTimeout = 30 * time.Second
+	metricsIdleTimeout  = 60 * time.Second
+	mainReadHeaderTO    = 30 * time.Second
+	mainReadTimeout     = 60 * time.Second
+	mainIdleTimeout     = 120 * time.Second
+	shutdownTimeout     = 30 * time.Second
+	burstMultiplier     = 2
+	serverErrBufferSize = 2
 )
 
 // Build-time variables injected by goreleaser (via ldflags).
@@ -96,6 +117,7 @@ func Run(cfg config.Config, logger *logrus.Logger) error {
 			return fmt.Errorf("listen on %s: %w", cfg.ListenAddr, err)
 		}
 		defer func() { _ = mainLn.Close() }()
+
 		return runHTTP(ctx, cfg, logger, mainLn, metricsLn)
 	}
 }
@@ -108,6 +130,7 @@ func bindObservability(ctx context.Context, cfg config.Config, logger *logrus.Lo
 		return nil, fmt.Errorf("listen on %s: %w", cfg.InternalAddr, err)
 	}
 	logger.Infof("Internal observability listener bound on %s", handlers.SanitizeLog(l.Addr().String()))
+
 	return l, nil
 }
 
@@ -131,10 +154,10 @@ func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serv
 	// each outbound call. Resty performs no retries by default, so outbound
 	// errors are returned to the model rather than silently retried.
 	sharedRestyClient := resty.NewWithTransportSettings(&resty.TransportSettings{
-		MaxIdleConns:    10,
-		IdleConnTimeout: 90 * time.Second,
+		MaxIdleConns:    restyMaxIdleConns,
+		IdleConnTimeout: restyIdleTimeout,
 	}).
-		SetTimeout(30*time.Second).
+		SetTimeout(restyTimeout).
 		SetRedirectPolicy(resty.RedirectNoPolicy()).
 		// Identify outbound requests (conformance N44/M10). The `version` var is
 		// always non-empty (defaults to "dev"), so the header can never be
@@ -192,7 +215,9 @@ func logStartupBanner(logger *logrus.Logger, cfg config.Config) {
 // error. On ctx cancellation Run returns nil (treating ctx.Err() as expected
 // termination), mirroring the HTTP path. The transport is injectable so tests
 // can drive an in-memory round-trip.
-func runStdio(ctx context.Context, cfg config.Config, logger *logrus.Logger, metricsLn net.Listener, transport mcp.Transport) error {
+func runStdio(
+	ctx context.Context, cfg config.Config, logger *logrus.Logger, metricsLn net.Listener, transport mcp.Transport,
+) error {
 	deps, err := buildServer(cfg, logger, "stdio")
 	if err != nil {
 		return err
@@ -211,9 +236,9 @@ func runStdio(ctx context.Context, cfg config.Config, logger *logrus.Logger, met
 	metricsServer := &http.Server{
 		Addr:              cfg.InternalAddr,
 		Handler:           metricsMux,
-		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: metricsReadHeaderTO,
+		WriteTimeout:      metricsWriteTimeout,
+		IdleTimeout:       metricsIdleTimeout,
 	}
 
 	// Channel to capture server errors (buffered to hold one).
@@ -230,7 +255,7 @@ func runStdio(ctx context.Context, cfg config.Config, logger *logrus.Logger, met
 	// session ends. In stdio there is no rate limiter and no HTTP middleware.
 	runErr := deps.srv.Run(ctx, transport)
 
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownTimeout)
 	defer cancel()
 	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
 		logger.Errorf("Internal server shutdown error: %v", err)
@@ -239,8 +264,10 @@ func runStdio(ctx context.Context, cfg config.Config, logger *logrus.Logger, met
 	// A cancelled context is expected termination, not an error.
 	if ctx.Err() != nil {
 		logger.Info("Server stopped gracefully")
+
 		return nil
 	}
+
 	return runErr
 }
 
@@ -260,12 +287,10 @@ func runHTTP(ctx context.Context, cfg config.Config, logger *logrus.Logger, main
 	defer deps.close()
 
 	srv := deps.srv
-	promRegistry := deps.promRegistry
-	metrics := deps.metrics
 
 	// Create the Streamable HTTP handler.
 	mcpHandler := mcp.NewStreamableHTTPHandler(
-		func(r *http.Request) *mcp.Server {
+		func(_ *http.Request) *mcp.Server {
 			return srv
 		},
 		&mcp.StreamableHTTPOptions{
@@ -273,13 +298,39 @@ func runHTTP(ctx context.Context, cfg config.Config, logger *logrus.Logger, main
 		},
 	)
 
-	// Wrap with middlewares (outermost to innermost):
-	// recovery → metrics → rate limit → body limit → logging → MCP handler.
+	handler, stopRateLimiter := buildHTTPHandler(logger, deps.metrics, cfg, mcpHandler)
+
+	// Health-check endpoint — bypasses all middleware (auth, rate limit, etc.)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", healthzHandler)
+	mux.Handle("/", handler)
+
+	logStartupBanner(logger, cfg)
+
+	mainServer := newMainServer(cfg, mux)
+	metricsServer := newMetricsServer(cfg.InternalAddr, handlers.RegisterMetricsOnRegistry(deps.promRegistry))
+
+	// Channel to capture server errors (buffered to hold both if both fail).
+	errCh := make(chan error, serverErrBufferSize)
+	go serve(logger, errCh, "mcp-searxng server", mainLn, mainServer)
+	go serve(logger, errCh, "Prometheus metrics server", metricsLn, metricsServer)
+
+	// Wait for a shutdown signal or a server error, then stop the rate
+	// limiter and gracefully shut both servers down in order.
+	return awaitAndShutdown(ctx, logger, errCh, mainServer, metricsServer, stopRateLimiter)
+}
+
+// buildHTTPHandler constructs the Streamable HTTP handler wrapped in the
+// middleware chain (recovery → metrics → rate limit → body limit → logging)
+// and returns it together with the rate-limiter stop function.
+func buildHTTPHandler(
+	logger *logrus.Logger, metrics *handlers.Metrics, cfg config.Config, mcpHandler http.Handler,
+) (http.Handler, func()) {
 	rateLimitMW, stopRateLimiter := handlers.RateLimitMiddleware(handlers.RateLimiterConfig{
 		GlobalLimit:    rate.Limit(cfg.RateLimitGlobal),
-		GlobalBurst:    cfg.RateLimitGlobal * 2,
+		GlobalBurst:    cfg.RateLimitGlobal * burstMultiplier,
 		PerClientLimit: rate.Limit(cfg.RateLimitPerClient),
-		PerClientBurst: cfg.RateLimitPerClient * 2,
+		PerClientBurst: cfg.RateLimitPerClient * burstMultiplier,
 	}, logger)
 	handler := handlers.RecoveryMiddleware(logger,
 		handlers.MetricsMiddleware(metrics)(
@@ -291,53 +342,56 @@ func runHTTP(ctx context.Context, cfg config.Config, logger *logrus.Logger, main
 		),
 	)
 
-	// Health-check endpoint — bypasses all middleware (auth, rate limit, etc.)
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", healthzHandler)
-	mux.Handle("/", handler)
+	return handler, stopRateLimiter
+}
 
-	logStartupBanner(logger, cfg)
-
-	// ---- Main MCP HTTP server ----
-	mainServer := &http.Server{
+// newMainServer builds the main MCP Streamable HTTP server on the listen
+// address, with the middleware chain as its handler.
+func newMainServer(cfg config.Config, handler http.Handler) *http.Server {
+	return &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           mux,
-		ReadHeaderTimeout: 30 * time.Second,
-		ReadTimeout:       60 * time.Second,
+		Handler:           handler,
+		ReadHeaderTimeout: mainReadHeaderTO,
+		ReadTimeout:       mainReadTimeout,
 		WriteTimeout:      cfg.WriteTimeout,
-		IdleTimeout:       120 * time.Second,
+		IdleTimeout:       mainIdleTimeout,
 	}
+}
 
-	// ---- Metrics HTTP server ----
-	metricsHandler := handlers.RegisterMetricsOnRegistry(promRegistry)
-	metricsMux := http.NewServeMux()
-	metricsMux.Handle("GET /metrics", metricsHandler)
+// newMetricsServer builds the internal observability server on the given
+// address serving the Prometheus metrics handler.
+func newMetricsServer(addr string, handler http.Handler) *http.Server {
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", handler)
 
-	metricsServer := &http.Server{
-		Addr:              cfg.InternalAddr,
-		Handler:           metricsMux,
-		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
+	return &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: metricsReadHeaderTO,
+		WriteTimeout:      metricsWriteTimeout,
+		IdleTimeout:       metricsIdleTimeout,
 	}
+}
 
-	// Channel to capture server errors (buffered to hold both if both fail).
-	errCh := make(chan error, 2)
+// serve runs an HTTP server on the pre-bound listener, forwarding any
+// non-graceful error to errCh for the caller to act on.
+func serve(logger *logrus.Logger, errCh chan<- error, name string, ln net.Listener, srv *http.Server) {
+	logger.Infof("Starting %s on %s", name, handlers.SanitizeLog(ln.Addr().String()))
+	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		errCh <- err
+	}
+}
 
-	go func() {
-		logger.Infof("Starting mcp-searxng server on %s", handlers.SanitizeLog(mainLn.Addr().String()))
-		if err := mainServer.Serve(mainLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-		}
-	}()
-
-	go func() {
-		logger.Infof("Starting Prometheus metrics server on %s", handlers.SanitizeLog(metricsLn.Addr().String()))
-		if err := metricsServer.Serve(metricsLn); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-		}
-	}()
-
+// awaitAndShutdown blocks until ctx is cancelled or a server reports an error,
+// then gracefully shuts down the main and metrics HTTP servers. It returns nil
+// on successful shutdown.
+func awaitAndShutdown(
+	ctx context.Context,
+	logger *logrus.Logger,
+	errCh <-chan error,
+	mainServer, metricsServer *http.Server,
+	stopRateLimiter func(),
+) error {
 	// Wait for ctx cancellation (shutdown signal) or a server error.
 	select {
 	case <-ctx.Done():
@@ -346,7 +400,7 @@ func runHTTP(ctx context.Context, cfg config.Config, logger *logrus.Logger, main
 		logger.Errorf("Server error: %v", err)
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
 	defer cancel()
 
 	// Stop the rate limiter background eviction goroutine.
@@ -361,5 +415,6 @@ func runHTTP(ctx context.Context, cfg config.Config, logger *logrus.Logger, main
 	}
 
 	logger.Info("Server stopped gracefully")
+
 	return nil
 }

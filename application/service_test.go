@@ -15,6 +15,7 @@ type mockSearchRepo struct {
 func (m *mockSearchRepo) Search(ctx context.Context, params domain.SearchParams) (*domain.SearchResponse, error) {
 	return m.searchFunc(ctx, params)
 }
+
 func TestSearchService_Search(t *testing.T) {
 	t.Parallel()
 

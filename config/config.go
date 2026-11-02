@@ -52,7 +52,7 @@ func (c Config) validate() error {
 	)
 }
 
-func validateMode(value interface{}) error {
+func validateMode(value any) error {
 	s, ok := value.(string)
 	if !ok {
 		return fmt.Errorf("must be a string")
@@ -60,12 +60,13 @@ func validateMode(value interface{}) error {
 	if s != "http" && s != "stdio" {
 		return fmt.Errorf("must be either \"http\" or \"stdio\" (got %q)", s)
 	}
+
 	return nil
 }
 
 // validateLogLevel accepts a nil *string (LOG_LEVEL unset) as valid and only
 // validates the value when it is non-nil.
-func validateLogLevel(value interface{}) error {
+func validateLogLevel(value any) error {
 	s, ok := value.(*string)
 	if !ok {
 		return fmt.Errorf("must be a string")
@@ -76,10 +77,11 @@ func validateLogLevel(value interface{}) error {
 	if _, err := logging.ParseLevel(*s); err != nil {
 		return err
 	}
+
 	return nil
 }
 
-func validateLogFormat(value interface{}) error {
+func validateLogFormat(value any) error {
 	s, ok := value.(string)
 	if !ok {
 		return fmt.Errorf("must be a string")
@@ -87,10 +89,11 @@ func validateLogFormat(value interface{}) error {
 	if _, err := logging.ParseFormat(s); err != nil {
 		return err
 	}
+
 	return nil
 }
 
-func validatePositiveInt(value interface{}) error {
+func validatePositiveInt(value any) error {
 	n, ok := value.(int)
 	if !ok {
 		return fmt.Errorf("must be an integer")
@@ -98,28 +101,39 @@ func validatePositiveInt(value interface{}) error {
 	if n < 1 {
 		return fmt.Errorf("must be at least 1 (got %d)", n)
 	}
+
 	return nil
 }
 
-func validateURLScheme(value interface{}) error {
-	u, err := url.Parse(value.(string))
+func validateURLScheme(value any) error {
+	s, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("must be a string")
+	}
+	u, err := url.Parse(s)
 	if err != nil {
 		return err
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("must use http or https scheme (got %q)", u.Scheme)
 	}
+
 	return nil
 }
 
-func validateURLHost(value interface{}) error {
-	u, err := url.Parse(value.(string))
+func validateURLHost(value any) error {
+	s, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("must be a string")
+	}
+	u, err := url.Parse(s)
 	if err != nil {
 		return err
 	}
 	if u.Host == "" {
 		return fmt.Errorf("must include a host (e.g. http://searxng:8888)")
 	}
+
 	return nil
 }
 
