@@ -173,16 +173,22 @@ func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serv
 	searxngClient.SetMetrics(infra.NewUpstreamMetrics(promRegistry))
 	searchSvc := application.NewSearchService(searxngClient)
 
-	// Create the MCP server instance.
+	// Create the MCP server instance. Server-level Instructions (M08) and the
+	// resources capability make the server self-describing over the protocol.
 	srv := mcp.NewServer(&mcp.Implementation{
 		Name:    "mcp-searxng",
 		Version: version,
 	}, &mcp.ServerOptions{
-		Logger: logging.Slog(logger),
+		Logger:       logging.Slog(logger),
+		Instructions: handlers.ServerInstructions,
 		Capabilities: &mcp.ServerCapabilities{
-			Tools: &mcp.ToolCapabilities{ListChanged: false},
+			Tools:     &mcp.ToolCapabilities{ListChanged: false},
+			Resources: &mcp.ResourceCapabilities{},
 		},
 	})
+
+	// Register the self-describing guidance resources (M09).
+	handlers.AddGuidanceResources(srv)
 
 	// Create MCP metrics collectors on the shared registry.
 	metrics := handlers.NewMetrics(promRegistry)
