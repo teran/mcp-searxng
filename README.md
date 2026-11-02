@@ -25,6 +25,18 @@
   <a href="https://github.com/teran/mcp-searxng/actions/workflows/ci.yml">
     <img src="https://img.shields.io/github/actions/workflow/status/teran/mcp-searxng/ci.yml?branch=master&label=coverage&logo=codecov" alt="Coverage">
   </a>
+  <a href="https://pkg.go.dev/github.com/teran/mcp-searxng">
+    <img src="https://pkg.go.dev/badge/github.com/teran/mcp-searxng.svg" alt="Go Reference">
+  </a>
+  <a href="https://github.com/teran/mcp-searxng/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/badge/gosec-passing-brightgreen" alt="gosec">
+  </a>
+  <a href="https://github.com/teran/mcp-searxng/actions/workflows/ci.yml">
+    <img src="https://img.shields.io/badge/govulncheck-passing-brightgreen" alt="govulncheck">
+  </a>
+  <a href="https://github.com/teran/mcp-searxng/actions/workflows/gremlins.yml">
+    <img src="https://img.shields.io/badge/mutation%20testing-passing-brightgreen" alt="gremlins">
+  </a>
   <a href="https://github.com/teran/mcp-searxng">
     <img src="https://img.shields.io/github/languages/code-size/teran/mcp-searxng" alt="Code Size">
   </a>
@@ -206,7 +218,7 @@ docker build -t ghcr.io/teran/mcp-searxng:latest .
 goreleaser release --clean
 ```
 
-> **Note:** CI enforces a minimum **85% test coverage** gate. Any PR that drops coverage below 85% will be blocked.
+> **Note:** CI enforces a minimum **95% test coverage** gate. Any PR that drops coverage below 95% will be blocked.
 
 ## Documentation
 
