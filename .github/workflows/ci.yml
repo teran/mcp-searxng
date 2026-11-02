@@ -20,26 +20,17 @@ jobs:
           go-version: "1.27"
           cache: true
 
-      # Lint + gosec via the official golangci-lint action (findings must be
-      # FIXED). Pinned to the local toolchain version (v2.15.0) so the v2 config
-      # schema cannot drift between CI and local runs.
-      - name: Lint (golangci-lint)
-        uses: golangci/golangci-lint-action@v9
-        with:
-          version: v2.15.0
-          args: --config .golangci.yml
-
-      # govulncheck — dependency-graph vulnerability scan; findings must be FIXED.
-      - name: govulncheck
+      # Lint — bind to the standard build-system interface (R07/N31): `make
+      # lint` runs golangci-lint (strict set incl. gosec) + go vet + govulncheck
+      # + go-arch-lint. Findings must be FIXED, not suppressed (S05).
+      - name: Install lint tools
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
-
-      # go-arch-lint — enforce DDD/Clean layer edges (C07GO).
-      - name: go-arch-lint
-        run: |
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           go install github.com/fe3dback/go-arch-lint@latest
-          go-arch-lint check
+
+      - name: Lint (make lint)
+        run: make lint
 
       # Unit tests with the race detector + >= 95% coverage gate (C01/C04GO).
       - name: Test
