@@ -134,8 +134,12 @@ func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serv
 		MaxIdleConns:    10,
 		IdleConnTimeout: 90 * time.Second,
 	}).
-		SetTimeout(30 * time.Second).
-		SetRedirectPolicy(resty.RedirectNoPolicy())
+		SetTimeout(30*time.Second).
+		SetRedirectPolicy(resty.RedirectNoPolicy()).
+		// Identify outbound requests (conformance N44/M10). The `version` var is
+		// always non-empty (defaults to "dev"), so the header can never be
+		// empty/malformed.
+		SetHeader("User-Agent", fmt.Sprintf("mcp-searxng/%s (https://github.com/teran/mcp-searxng)", version))
 
 	// Create the SearXNG client and search service (shared across all requests).
 	searxngClient := infra.NewClient(cfg.SearXNGURL, sharedRestyClient)
