@@ -25,10 +25,12 @@ jobs:
           go-version: "1.27"
           cache: true
 
-      # Bind to the standard build-system interface (R07): `make build` runs
-      # goreleaser, producing the single binary artifact in dist/ (B01/B02/B04).
-      - name: Build (goreleaser via make)
-        run: make build
+      # Bind to the standard build-system interface (R07): `make build-snapshot`
+      # runs goreleaser in snapshot mode (no git tag on a master commit), producing
+      # the single binary artifact in dist/ with a SNAPSHOT version embedded
+      # (B01/B02/B04/N43).
+      - name: Build snapshot (goreleaser via make)
+        run: make build-snapshot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -46,11 +46,14 @@ const (
 	serverErrBufferSize = 2
 )
 
-// Build-time variables injected by goreleaser (via ldflags).
+// Build-time variables injected by goreleaser (via ldflags). appName is used
+// to identify the binary and its outbound HTTP requests (B02 / M10-N44); the
+// default keeps local/dev builds self-identifying.
 var (
-	version = "dev"
-	commit  = "none"    //nolint:gochecknoglobals
-	date    = "unknown" //nolint:gochecknoglobals
+	appName = "mcp-searxng" //nolint:gochecknoglobals
+	version = "dev"         //nolint:gochecknoglobals
+	commit  = "none"        //nolint:gochecknoglobals
+	date    = "unknown"     //nolint:gochecknoglobals
 )
 
 func main() {
@@ -162,7 +165,7 @@ func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serv
 		// Identify outbound requests (conformance N44/M10). The `version` var is
 		// always non-empty (defaults to "dev"), so the header can never be
 		// empty/malformed.
-		SetHeader("User-Agent", fmt.Sprintf("mcp-searxng/%s (https://github.com/teran/mcp-searxng)", version))
+		SetHeader("User-Agent", fmt.Sprintf("%s/%s (https://github.com/teran/mcp-searxng)", appName, version))
 
 	// Create the Prometheus registry first so the upstream metrics collector
 	// can be attached to the SearXNG client (O03).

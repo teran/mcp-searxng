@@ -9,6 +9,10 @@
 #   make build                         build binaries for ALL intended
 #                                      architectures (Go: goreleaser) into dist/
 #                                      — single artifact (B01/B02/B04)
+#   make build-snapshot                untagged / dev (non-release) build via
+#                                      `goreleaser release --snapshot` — embeds a
+#                                      SNAPSHOT version ({X}-SNAPSHOT-{commit},
+#                                      B02/N43); used by the master image path
 #   make container-image               build the image ONLY from the `build`
 #                                      artifact (B04); Remote/Hybrid only
 #   make container-image push=true     build + push the image (needs IMAGE + creds)
@@ -42,13 +46,21 @@ PUSH   ?= false
 # Multi-arch platform matrix for the container image.
 PLATFORMS ?= linux/amd64,linux/arm64
 
-.PHONY: build container-image stage-platform-binaries test e2e lint fmt clean
+.PHONY: build build-snapshot container-image stage-platform-binaries test e2e lint fmt clean
 
 ## Build binaries for ALL intended architectures into dist/ (single artifact).
 ## Uses goreleaser so the same artifact feeds both `container-image` and the
 ## binary release (B01/B02/B04) — never a separate in-image compile (N18).
 build:
 	goreleaser release --skip=publish --clean
+
+## Untagged / dev (non-release) build: same single-artifact flow, but run in
+## snapshot mode so it works on a commit with no git tag and embeds a SNAPSHOT
+## version ({X}-SNAPSHOT-{commit}, B02/N43). Keeps the same dist/ layout (per-
+## platform subdirectories), so `stage-platform-binaries` / `container-image`
+## consume it unchanged. Used by the master image path (master.yml).
+build-snapshot:
+	goreleaser release --snapshot --skip=publish --clean
 
 ## Build the container image ONLY from the `build` artifact in dist/ (B04),
 ## without recompiling inside the image (N18). `make container-image push=true`

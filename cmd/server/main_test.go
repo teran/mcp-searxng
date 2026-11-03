@@ -608,7 +608,7 @@ func TestRunStdio_OutboundUserAgent(t *testing.T) {
 		t.Fatalf("expected search to succeed, got %#v", res)
 	}
 
-	wantUA := fmt.Sprintf("mcp-searxng/%s (https://github.com/teran/mcp-searxng)", version)
+	wantUA := fmt.Sprintf("%s/%s (https://github.com/teran/mcp-searxng)", appName, version)
 	if gotUA != wantUA {
 		t.Errorf("User-Agent = %q, want %q", gotUA, wantUA)
 	}
