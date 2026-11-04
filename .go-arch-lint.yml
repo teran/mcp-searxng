@@ -46,6 +46,8 @@ components:
     in: logging
   requestid:
     in: requestid
+  e2e:
+    in: e2e
 
 deps:
   # cmd is the composition root; it wires application + infrastructure +
@@ -96,6 +98,17 @@ deps:
 
   # requestid is a leaf utility — no internal deps (stdlib only).
   requestid:
+    anyVendorDeps: true
+
+  # e2e is a build-tagged test-harness package (//go:build e2e, excluded from the
+  # default unit pass). It exercises the full tool-handler -> SearXNG path, so it
+  # may import the layers it drives (application/domain/infrastructure) plus its
+  # vendor harness (go-docker-testsuite, resty).
+  e2e:
+    mayDependOn:
+      - application
+      - domain
+      - infrastructure
     anyVendorDeps: true
 
 # Directories excluded from dependency analysis (generated code, vendored deps).
