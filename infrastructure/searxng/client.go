@@ -133,6 +133,8 @@ func (c *Client) Search(ctx context.Context, params domain.SearchParams) (*domai
 // -- private HTTP helpers --
 
 func (c *Client) doRequest(ctx context.Context, path string, query url.Values) ([]byte, error) {
+	// #nosec G125 -- path is always a compile-time constant (e.g. "/search"),
+	// never derived from user input, so there is no path-traversal surface.
 	fullURL, err := url.JoinPath(c.baseURL, path)
 	if err != nil {
 		return nil, fmt.Errorf("build URL: %w", err)

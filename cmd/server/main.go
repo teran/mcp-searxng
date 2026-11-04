@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"os/signal"
 	"syscall"
 	"time"
@@ -207,11 +206,15 @@ func buildServer(cfg config.Config, logger *logrus.Logger, source string) (*serv
 	}, nil
 }
 
-// logStartupBanner writes the startup banner (L06) — the first log lines that
-// identify the service, its version and its upstream. Shared by both transports.
+// logStartupBanner writes the startup banner (B05/L06) — the first log lines
+// that identify the service, its version and its upstream. Shared by both
+// transports. The first line follows the B05 template; the SearXNG URL is
+// redacted via the annotation-driven helper (S02) so any embedded credentials
+// are hidden while the host stays visible.
 func logStartupBanner(logger *logrus.Logger, cfg config.Config) {
-	u, _ := url.Parse(cfg.SearXNGURL)
-	logger.Infof("SearXNG URL: %s", handlers.RedactURL(handlers.SanitizeLog(u.Redacted())))
+	redacted, _ := handlers.RedactStruct(cfg).(config.Config)
+	logger.Infof("Starting %s/%s (commit: %s; built at %s)", appName, version, commit, date)
+	logger.Infof("SearXNG URL: %s", handlers.SanitizeLog(redacted.SearXNGURL))
 	logger.Infof("Version: %s, commit: %s, built: %s", version, commit, date)
 }
 
@@ -344,7 +347,9 @@ func buildHTTPHandler(
 		handlers.MetricsMiddleware(metrics)(
 			rateLimitMW(
 				handlers.BodyLimitMiddleware(handlers.DefaultMaxRequestBodySize)(
-					handlers.LoggingMiddleware(logger, mcpHandler),
+					handlers.LoggingMiddleware(logger,
+						handlers.ClientIPMiddleware(mcpHandler),
+					),
 				),
 			),
 		),

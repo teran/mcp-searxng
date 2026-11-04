@@ -22,7 +22,7 @@ const accessLogMaxArgs = 512
 // logging, bounding its length. Serialization failures yield a fixed marker
 // rather than leaking internals.
 func redactArgs(input any) string {
-	b, err := json.Marshal(input)
+	b, err := json.Marshal(RedactStruct(input))
 	if err != nil {
 		return "<unserializable>"
 	}
@@ -54,6 +54,15 @@ func WrapAccessLog[I, O any](
 		requestID := requestid.New()
 		ctx = requestid.With(ctx, requestID)
 
+		// The L08 `source` is the gateway-provided client IP (X-Real-IP /
+		// X-Forwarded-For, injected into the context by ClientIPMiddleware)
+		// when a gateway populated them; otherwise it falls back to the
+		// transport label passed at registration.
+		sourceForLog := source
+		if ip := ClientIPFrom(ctx); ip != "" {
+			sourceForLog = ip
+		}
+
 		result, output, err := handler(ctx, req, input)
 		duration := time.Since(start)
 
@@ -61,10 +70,10 @@ func WrapAccessLog[I, O any](
 			fields := logrus.Fields{
 				"tool":       toolName,
 				"args":       redactArgs(input),
-				"source":     source,
+				"source":     sourceForLog,
 				"request_id": requestID,
 				"duration":   duration,
-				"outcome":    "success",
+				"outcome":    "ok",
 			}
 			if err != nil {
 				fields["outcome"] = "error"

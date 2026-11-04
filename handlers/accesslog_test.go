@@ -100,6 +100,41 @@ func TestAccessLogIncludesRequestID(t *testing.T) {
 	}
 }
 
+// TestAccessLogSourceClientIP verifies L08: when a gateway-provided client IP
+// is present in the context, the access-log `source` uses it instead of the
+// transport label.
+func TestAccessLogSourceClientIP(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	logger := logrus.New()
+	logger.SetOutput(&buf)
+	logger.SetFormatter(&logrus.JSONFormatter{})
+	logger.SetLevel(logrus.InfoLevel)
+
+	handler := WrapAccessLog(
+		logger,
+		"http",
+		"search",
+		func(_ context.Context, _ *mcp.CallToolRequest, _ input) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{}, nil, nil
+		},
+	)
+
+	ctx := WithClientIP(context.Background(), "203.0.113.7")
+	if _, _, err := handler(ctx, &mcp.CallToolRequest{}, input{Query: "x"}); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	var rec map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(buf.Bytes()), &rec); err != nil {
+		t.Fatalf("log output is not valid JSON: %v\nraw: %s", err, buf.String())
+	}
+	if rec["source"] != "203.0.113.7" {
+		t.Errorf("source = %v, want client IP 203.0.113.7", rec["source"])
+	}
+}
+
 func testWrapAccessLogSuccess(t *testing.T, newJSONLogger func() (*logrus.Logger, *bytes.Buffer)) {
 	t.Helper()
 
@@ -131,8 +166,8 @@ func testWrapAccessLogSuccess(t *testing.T, newJSONLogger func() (*logrus.Logger
 	if entry["source"] != "stdio" {
 		t.Errorf("source = %v, want stdio", entry["source"])
 	}
-	if entry["outcome"] != "success" {
-		t.Errorf("outcome = %v, want success", entry["outcome"])
+	if entry["outcome"] != "ok" {
+		t.Errorf("outcome = %v, want ok", entry["outcome"])
 	}
 	args, ok := entry["args"].(string)
 	if !ok {

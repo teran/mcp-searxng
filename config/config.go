@@ -16,7 +16,7 @@ import (
 
 // Config represents the application configuration loaded from environment variables.
 type Config struct {
-	SearXNGURL         string        `envconfig:"SEARXNG_URL" required:"true"`
+	SearXNGURL         string        `envconfig:"SEARXNG_URL" required:"true" secret:"true"`
 	ListenAddr         string        `envconfig:"LISTEN_ADDR" default:":8080"`
 	InternalAddr       string        `envconfig:"INTERNAL_ADDR" default:":8081"`
 	RateLimitGlobal    int           `envconfig:"RATE_LIMIT_GLOBAL" default:"100"`
