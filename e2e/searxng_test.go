@@ -4,11 +4,13 @@ package e2e
 
 import (
 	"context"
+	"fmt"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	docker "github.com/teran/go-docker-testsuite"
-	"github.com/teran/go-docker-testsuite/wait"
 	"resty.dev/v3"
 
 	"github.com/teran/mcp-searxng/application"
@@ -56,22 +58,43 @@ func TestSearchEndToEnd(t *testing.T) {
 		t.Fatalf("run SearXNG container: %v", err)
 	}
 
-	// Wait until the SearXNG web UI is ready (HTTP 200). The go-docker-testsuite
-	// ForHTTPGet strategy treats only ECONNREFUSED as transient and classifies
-	// ECONNRESET ("connection reset by peer") as a fatal error — but SearXNG
-	// resets connections while it is still booting, which intermittently flakes
-	// CI. Wrap the strategy so any transient transport error is retried instead
-	// of failing immediately; the whole probe is still bounded by the ctx
-	// deadline (3 minutes) set above.
-	resilient := func(ctx context.Context, t wait.Target) (bool, error) {
-		ready, err := wait.ForHTTPGet(8080, wait.WithPath("/"), wait.WithResponseStatuses(200))(ctx, t)
-		if err != nil {
-			return false, nil // not ready yet — keep polling
+	// Wait until the SearXNG web UI is ready (HTTP 200). This explicit poll
+	// replaces the harness wait.ForHTTPGet, which classifies ECONNRESET
+	// ("connection reset by peer") as a fatal error and, once wrapped for retry,
+	// hides the true cause behind an opaque "context deadline exceeded". Here we
+	// poll ourselves, remember the last probe error, and on timeout dump the
+	// SearXNG container logs — so a genuine boot/config failure (e.g. a rejected
+	// settings.yml) is diagnosable from the CI log instead of an unhelpful
+	// timeout. The whole probe is bounded by the ctx deadline (3 minutes).
+	lastErr := fmt.Errorf("readiness probe never ran")
+readyLoop:
+	for {
+		hp, urlErr := c.URL(docker.ProtoTCP, 8080)
+		if urlErr != nil {
+			lastErr = fmt.Errorf("resolve URL: %w", urlErr)
+		} else {
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+hp.String()+"/", nil)
+			resp, reqErr := http.DefaultClient.Do(req)
+			if reqErr != nil {
+				lastErr = fmt.Errorf("GET /: %w", reqErr)
+			} else {
+				_ = resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					break readyLoop
+				}
+				lastErr = fmt.Errorf("GET / returned status %d", resp.StatusCode)
+			}
 		}
-		return ready, nil
-	}
-	if err := wait.Wait(ctx, c, resilient); err != nil {
-		t.Fatalf("wait for SearXNG readiness: %v", err)
+
+		select {
+		case <-ctx.Done():
+			logCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			logs, _ := c.GetOutput(logCtx, func(string) bool { return true })
+			t.Fatalf("SearXNG not ready before deadline; last probe error: %v\n--- SearXNG container logs ---\n%s",
+				lastErr, strings.Join(logs, "\n"))
+		case <-time.After(500 * time.Millisecond):
+		}
 	}
 
 	hp, err := c.URL(docker.ProtoTCP, 8080)
