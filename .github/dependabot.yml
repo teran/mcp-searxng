@@ -1,16 +1,29 @@
+# Dependabot — automated dependency updates (SPEC.md "Dependency Management").
+#
+# - Go module dependencies in `/` (gomod) — checked weekly.
+# - Dockerfile base stages (docker) — checked weekly (the image is built from
+#   the goreleaser binary; the Dockerfile pulls `alpine:latest` as the
+#   CA-certificate source, the final image is `FROM scratch`).
+# - GitHub Actions (github-actions) — checked weekly.
+#
+# `open-pull-requests-limit` bounds how many update PRs Dependabot keeps open
+# at once per ecosystem so the queue stays reviewable.
 version: 2
 updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 10
 
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 5
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 10
