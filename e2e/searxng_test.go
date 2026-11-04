@@ -21,9 +21,14 @@ import (
 // searxngImage is the SearXNG container image used for the e2e test.
 const searxngImage = "searxng/searxng:latest"
 
-// searxngSettings enables the JSON search format that mcp-searxng requires and
-// disables the limiter so the test is not throttled.
-var searxngSettings = []byte(`server:
+// searxngSettings enables the JSON search format that mcp-searxng requires,
+// disables the limiter so the test is not throttled, and (via
+// use_default_settings: true) keeps the stock SearXNG defaults — including
+// search.default_doi_resolver — which every request reads. Without that flag the
+// injected file REPLACES the whole default settings.yml and requests fail with
+// KeyError: 'default_doi_resolver' -> HTTP 500.
+var searxngSettings = []byte(`use_default_settings: true
+server:
   secret_key: "e2e-test-only-secret"
   limiter: false
 search:
