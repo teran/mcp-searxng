@@ -24,7 +24,7 @@ The server is a **Hybrid** MCP server (M06): one binary that binds whichever tra
 Selection precedence: the **`-mode`** CLI flag overrides the **`MODE`** env var; the env var overrides the built-in default of `stdio`.
 
 - **`stdio`** — the MCP protocol flows over stdin/stdout. There is **no** HTTP middleware, **no** rate limiting (the process is local and trusted), and logging is file-based (see [Logging](#logging)).
-- **`http`** — the server exposes the MCP Streamable HTTP handler on `LISTEN_ADDR` (default `:8080`), wrapped in the full HTTP middleware chain (recovery → metrics → rate limit → body limit → logging) plus `GET /healthz`. Rate limiting and body limits apply only in this mode.
+- **`http`** — the server exposes the MCP Streamable HTTP handler on `LISTEN_ADDR` (default `:8080`), wrapped in the full HTTP middleware chain (recovery → metrics → rate limit → body limit → logging → client-IP) plus `GET /healthz`. Rate limiting and body limits apply only in this mode.
 
 Both modes share the same tool set, the same internal observability listener, and the same transport-agnostic per-tool access log.
 
@@ -256,19 +256,19 @@ A **stdio** deployment with `LOG_LEVEL` unset gets a silent, valid logger (drops
 
 `LOG_FORMAT=json` switches the formatter to JSON in any mode.
 
-### Startup banner (L06)
+### Startup banner (B05 / L06)
 
-On startup the server emits its banner as the opening log lines: the sanitized/redacted SearXNG URL and the build version, commit and date. This is emitted in both modes (in stdio it is written to the log file when logging is enabled).
+On startup the server emits its banner as the opening log lines (B05/L06): the **very first line** follows the template `Starting {appName}/{appVersion} (commit: {commit}; built at {date}) ...`, followed by the annotation-redacted SearXNG URL (host visible, credentials hidden) and the build version, commit and date. This is emitted in both modes (in stdio it is written to the log file when logging is enabled).
 
 ### Transport-agnostic access log (L08)
 
 Every `tools/call` emits one INFO-level access-log line regardless of transport (via `WrapAccessLog`, composed at registration time). The line carries:
 
 - `tool` — the hardcoded tool name
-- `args` — the sanitized and bounded (≤ 512 chars) serialized tool input
-- `source` — the transport label (`http` or `stdio`)
+- `args` — the sanitized, annotation-redacted and bounded (≤ 512 chars) serialized tool input
+- `source` — the gateway-provided client IP (`X-Real-IP` / `X-Forwarded-For`, injected via `ClientIPMiddleware`) when a reverse proxy populates them, otherwise the transport label (`http`/`stdio`)
 - `duration` — handler execution time
-- `outcome` — `success` or `error` (plus a sanitized `error` field on failure)
+- `outcome` — `ok` or `error` (plus a sanitized `error` field on failure)
 
 When the logger is not enabled at INFO level the wrapper is a no-op beyond a cheap level check, so a disabled logger costs nothing.
 
@@ -293,7 +293,7 @@ Custom Prometheus metrics:
 
 ## Middleware Chain
 
-The five-layer HTTP middleware chain described below applies **only in `-mode http`**. The server applies these layers to every HTTP request before reaching the MCP Streamable HTTP handler, executed in this order (outermost first). In **stdio** mode there is no HTTP middleware and no rate limiting (the process is local and trusted). The search service is injected directly into tool handlers at registration time (via `RegisterToolsWithSource`), so no service-injection middleware is needed.
+The six-layer HTTP middleware chain described below applies **only in `-mode http`**. The server applies these layers to every HTTP request before reaching the MCP Streamable HTTP handler, executed in this order (outermost first). In **stdio** mode there is no HTTP middleware and no rate limiting (the process is local and trusted). The search service is injected directly into tool handlers at registration time (via `RegisterToolsWithSource`), so no service-injection middleware is needed.
 
 ### 1. RecoveryMiddleware (`handlers/middleware.go`)
 
@@ -329,6 +329,10 @@ Limits the request body size to 1 MB using `http.MaxBytesReader`.
 
 Reads and buffers the request body to parse the JSON-RPC method name, validates batch size (max 100), and logs a single line at INFO level with the `mcp_log` prefix.
 
+### 6. ClientIPMiddleware (`handlers/clientip.go`)
+
+Injects the gateway-provided client IP (`X-Real-IP` / `X-Forwarded-For`) into the request context so the L08 access-log `source` records the real client. When no gateway header is present the context is left empty and `WrapAccessLog` falls back to the transport label.
+
 ## Error Handling
 
 ### HTTP Level (Middleware)
@@ -351,7 +355,7 @@ Reads and buffers the request body to parse the JSON-RPC method name, validates 
 - Global (100 rps) and per-client (10 rps) rate limiting via `RateLimitMiddleware` — **HTTP mode only**.
 - Batch JSON-RPC requests are limited to 100 items per batch to prevent amplification attacks — **HTTP mode only**.
 - All log strings are sanitized — control characters are stripped to prevent log injection.
-- Credentials in the SearXNG URL are redacted before logging via `url.Redacted()`.
+- Credentials in the SearXNG URL are redacted before logging via the annotation-driven redaction helper (`secret:"true"` on the config field — S02).
 - HTTP redirects are disabled (`RedirectNoPolicy`).
 - Response bodies from SearXNG are limited to 10 MB via `io.LimitReader`.
 - **Prometheus metrics** are exposed on the internal listener (`INTERNAL_ADDR`, default `:8081`) with no built-in authentication — network-restrict in production.
@@ -411,7 +415,7 @@ The server is a **Hybrid (M06) read-only search proxy**: stdio for a local trust
 
 | Data class | Sensitivity | Confidentiality | Integrity | Availability |
 |---|---|---|---|---|
-| SearXNG base URL (may embed credentials) | **Secret** | `url.Redacted()` at startup banner (main.go:205); never log raw | — | — |
+| SearXNG base URL (may embed credentials) | **Secret** | annotation-driven redaction (`secret:"true"`, `RedactStruct`) at startup banner (main.go `logStartupBanner`); never log raw | — | — |
 | Search queries | **Restricted** | sanitized in access log (redactArgs); not PII-logged | validate types (S08) | — |
 | Result URLs/content (engines) | **Public/untrusted** | treat as untrusted (S07) | sanitize URL scheme + strip control/bidi chars | — |
 | Metrics (`INTERNAL_ADDR`) | **Restricted** | network-restrict listener; no auth → keep off public net | — | observability must stay up |
@@ -427,7 +431,7 @@ All classes: no persistence; nothing encrypted at rest (X04 N/A — stateless).
 | Log injection / control chars / ANSI in returned content | forged log lines, terminal escape attacks | `SanitizeLog` strips control+bidi chars (middleware.go:123); `sanitizeOutput` strips C0/bidi (tools.go:169) |
 | Indirect prompt injection via result content | hidden payload spoofing tool output to model | `sanitizeOutput` removes bidi overrides (LRM/RLM/LRE/RLE/PDF/LRO/RLO); structured untrusted output (S07) |
 | DoS: batch amplification / oversized body / flooding | memory/CPU exhaustion, upstream starvation | `checkBatchSize` cap = 100 (middleware.go:45); `BodyLimitMiddleware` via `MaxBytesReader`; 10 MB response cap (client.go:26); 2-tier global+per-client token-bucket rate limiter (ratelimit.go:96) → 429 |
-| Credential leakage in logs | SearXNG token in startup banner/access log | `u.Redacted()` + `SanitizeLog` (main.go:205); access log uses redacted args; no-secrets-in-logs (L05) |
+| Credential leakage in logs | SearXNG token in startup banner/access log | annotation-driven redaction (`RedactStruct`/`RedactValue`) + `SanitizeLog`; access log uses annotation-redacted args; no-secrets-in-logs (L05) |
 | Metrics endpoint exposure | attacker reads request/upstream telemetry | `INTERNAL_ADDR` is a separate listener with **no auth** — MUST be network-restricted (loopback/firewall); not exposed via reverse proxy |
 | Auditability | no cross-system tracing | `request_id` forwarded as `X-Request-ID` (client.go:151); correlated access log (L09/L08) |
 
@@ -436,7 +440,7 @@ All classes: no persistence; nothing encrypted at rest (X04 N/A — stateless).
 | Criterion | Verdict | Note |
 |---|---|---|
 | S01 TLS | PASS | TLS terminated at reverse proxy (HTTP mode); stdio local |
-| S02 Secret redaction | **PARTIAL** | `url.Redacted()` + `SanitizeLog`; relies on resty/base-URL config not logging credentials |
+| S02 Secret redaction | **PASS** | annotation-based (`secret:"true"` struct tags) via a single `RedactStruct`/`RedactValue` helper; URL userinfo masked while host stays visible; `RedactURL` kept as a defensive free-text complement |
 | S03 Input validation | PASS | typed params + sanitizers (S08) |
 | S04 Filesystem | N/A | no filesystem access |
 | S05 — | PASS | see S01/S02 logging controls |
@@ -486,10 +490,11 @@ This project follows **test-driven development (TDD)** — tests are written bef
 Every commit on any branch is checked by:
 
 1. **golangci-lint** — static analysis with `gosec` enabled.
-2. **govulncheck** — vulnerability scan of the dependency graph; any finding fails the build and must be fixed (see the S5 policy in Security Considerations).
-3. **go test** — unit tests with coverage profile.
-4. **Coverage gate** — total test coverage must be at least **95%**; the CI fails the build if the total falls below this threshold (checked via `go tool cover` after tests).
-5. **gremlins unleash** — mutation testing as a **hard gate**: the build fails if mutation efficacy or mutant coverage drop below **80%** (C02/C08GO).
+2. **gosec (standalone)** — SAST via `gosec -quiet ./...` (v2.30.0, compatible with Go 1.27.3).
+3. **govulncheck** — vulnerability scan of the dependency graph; any finding fails the build and must be fixed (see the S5 policy in Security Considerations).
+4. **go test** — unit tests with coverage profile.
+5. **Coverage gate** — total test coverage must be at least **95%**; the CI fails the build if the total falls below this threshold (checked via `go tool cover` after tests).
+6. **gremlins unleash** — mutation testing as a **hard gate**: the build fails if mutation efficacy or mutant coverage drop below **80%** (C02/C08GO).
 
 ### Linting
 

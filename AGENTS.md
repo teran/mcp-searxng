@@ -33,6 +33,8 @@ This document describes the agents/assistants involved in the development and op
 | `handlers/ratelimit.go`                     | Rate limiting middleware (global + per-client) — HTTP mode only |
 | `handlers/metrics.go`                       | Prometheus metrics collectors + middleware + `WrapToolHandler` |
 | `handlers/accesslog.go`                     | `WrapAccessLog` — transport-agnostic per-tool access log (L08) |
+| `handlers/redact.go`                        | Annotation-driven redaction (`secret:"true", S02`): `RedactStruct`/`RedactValue` + `RedactURL` free-text complement |
+| `handlers/clientip.go`                      | `ClientIPMiddleware` + `WithClientIP`/`ClientIPFrom` — gateway client-IP for the L08 `source` |
 | `handlers/tools.go`                         | MCP tool handler factories + I/O types          |
 | `handlers/registration.go`                  | Tool registration via `RegisterToolsWithSource()` |
 | `application/service.go`                    | Business logic / use case layer                 |
@@ -75,10 +77,11 @@ The server exposes Prometheus metrics on an internal observability listener (**`
 Every commit on any branch is checked by:
 
 1. **golangci-lint** — static analysis with `gosec` enabled.
-2. **govulncheck** — vulnerability scan of the dependency graph; any finding fails the build and must be fixed (see the S5 policy in Security Considerations).
-3. **go test** — unit tests with coverage profile (uploaded as artifact).
-4. **Coverage gate** — total test coverage must be at least **95%** (checked via `go tool cover` after tests).
-5. **gremlins unleash** — mutation testing on packages with highest coverage (`handlers`, `application`, `infrastructure/searxng`, `config`). Runs as a **hard gate** — the build fails if mutation efficacy or mutant coverage drop below **80%** (C02/C08GO).
+2. **gosec (standalone)** — SAST via `gosec -quiet ./...` (v2.30.0, compatible with Go 1.27.3).
+3. **govulncheck** — vulnerability scan of the dependency graph; any finding fails the build and must be fixed (see the S5 policy in Security Considerations).
+4. **go test** — unit tests with coverage profile (uploaded as artifact).
+5. **Coverage gate** — total test coverage must be at least **95%** (checked via `go tool cover` after tests).
+6. **gremlins unleash** — mutation testing on packages with highest coverage (`handlers`, `application`, `infrastructure/searxng`, `config`). Runs as a **hard gate** — the build fails if mutation efficacy or mutant coverage drop below **80%** (C02/C08GO).
 
 Workflow files:
 - `.github/workflows/ci.yml` — lint + govulncheck + test + coverage upload + coverage gate
