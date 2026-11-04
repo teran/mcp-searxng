@@ -56,8 +56,21 @@ func TestSearchEndToEnd(t *testing.T) {
 		t.Fatalf("run SearXNG container: %v", err)
 	}
 
-	// Wait until the SearXNG web UI is ready (HTTP 200).
-	if err := wait.Wait(ctx, c, wait.ForHTTPGet(8080, wait.WithPath("/"), wait.WithResponseStatuses(200))); err != nil {
+	// Wait until the SearXNG web UI is ready (HTTP 200). The go-docker-testsuite
+	// ForHTTPGet strategy treats only ECONNREFUSED as transient and classifies
+	// ECONNRESET ("connection reset by peer") as a fatal error — but SearXNG
+	// resets connections while it is still booting, which intermittently flakes
+	// CI. Wrap the strategy so any transient transport error is retried instead
+	// of failing immediately; the whole probe is still bounded by the ctx
+	// deadline (3 minutes) set above.
+	resilient := func(ctx context.Context, t wait.Target) (bool, error) {
+		ready, err := wait.ForHTTPGet(8080, wait.WithPath("/"), wait.WithResponseStatuses(200))(ctx, t)
+		if err != nil {
+			return false, nil // not ready yet — keep polling
+		}
+		return ready, nil
+	}
+	if err := wait.Wait(ctx, c, resilient); err != nil {
 		t.Fatalf("wait for SearXNG readiness: %v", err)
 	}
 
